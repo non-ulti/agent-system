@@ -44,7 +44,8 @@ description: Use when the user wants to save the current session's working state
 
 4. **아래 템플릿으로 핸드오프 파일을 쓴다.** 같은 슬러그면 그 파일만 덮어쓴다(다른 작업 파일은 건드리지 않는다). 덮어쓸 때 `- 저장:` 줄도 반드시 `$NOW`로 다시 찍는다 — 본문 시각이 옛것으로 남으면 색인 시각과 서로 달라 어느 쪽이 정본인지 헷갈린다. 필수 4섹션은 항상, 선택 3섹션은 해당 내용이 있을 때만. 빈 섹션을 억지로 남기지 않는다:
    ```bash
-   DIR="$HOME/.claude/agent-system/handoffs"; mkdir -p "$DIR"
+   [ ! -e "$HOME/.agent-system" ] && [ -d "$HOME/.claude/agent-system" ] && ln -s "$HOME/.claude/agent-system" "$HOME/.agent-system" 2>/dev/null || :
+   DIR="$HOME/.agent-system/handoffs"; mkdir -p "$DIR"
    # 파일: $DIR/<슬러그>.md
    ```
 
@@ -53,7 +54,16 @@ description: Use when the user wants to save the current session's working state
    - `상태` = 지금 어디까지 왔고 다음 할 일이 무엇인지 한 줄. 저장할 때마다 바뀐다. 사람이 목록에서 "어느 걸 이어서 할지" 고르는 데 실제로 쓰는 칸이라 날짜 약속("9/4 복귀 후 확인")이 있으면 여기에 넣는다.
    - `관련repo` = 작업 repo basename을 쉼표로(없으면 `-`). 주변 repo는 넣지 않는다.
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/scripts/handoff-index.sh" upsert "$SLUG" "$NOW" "<목표 한 줄>" "<상태 한 줄>" "<repo basename들>"
+   INDEX_SH=""
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh" ]; then
+     INDEX_SH="$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh"
+   elif [ -f "$HOME/.agent-system/bin/handoff-index.sh" ]; then
+     INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"
+   else
+     INDEX_SH="$(find "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" -name "handoff-index.sh" 2>/dev/null | head -1)"
+   fi
+   [ -n "$INDEX_SH" ] && [ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다" >&2; exit 1; }
+   "$INDEX_SH" upsert "$SLUG" "$NOW" "<목표 한 줄>" "<상태 한 줄>" "<repo basename들>"
    ```
    스크립트가 같은 슬러그 줄을 지우고 새 줄을 넣는다. 칸 값의 탭·줄바꿈은 공백으로 바꾸므로 TSV 칸 수가 틀어지지 않는다. 쓰기 전 색인을 `handoffs.tsv.bak` 하나로 복사해 둔다(이전 `.bak`은 덮어씀). 색인은 목록용 요약일 뿐 정본은 `handoffs/<슬러그>.md`다. 색인·핸드오프 모두 로컬 전용이다.
 
@@ -66,7 +76,16 @@ description: Use when the user wants to save the current session's working state
 작업이 끝났다고 사용자가 말하면(`save-context --done <슬러그>`, "kuro 끝났어 보관해줘") 핸드오프를 보관함으로 옮기고 색인에서 지운다. 색인은 "이어서 할 것"의 목록이라, 끝난 것이 남아 있으면 고를 때마다 전체를 다시 읽어야 한다.
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/handoff-index.sh" archive "$SLUG"     # 여러 개면 슬러그를 이어서 적는다
+INDEX_SH=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh" ]; then
+  INDEX_SH="$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh"
+elif [ -f "$HOME/.agent-system/bin/handoff-index.sh" ]; then
+  INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"
+else
+  INDEX_SH="$(find "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" -name "handoff-index.sh" 2>/dev/null | head -1)"
+fi
+[ -n "$INDEX_SH" ] && [ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다" >&2; exit 1; }
+"$INDEX_SH" archive "$SLUG"     # 여러 개면 슬러그를 이어서 적는다
 ```
 `handoffs/<슬러그>.md`를 `handoffs/archive/`로 옮기고 색인 줄을 지운다.
 

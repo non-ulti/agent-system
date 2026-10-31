@@ -5,10 +5,17 @@
 #   handoff-index.sh remove <슬러그>
 #   handoff-index.sh archive <슬러그> [<슬러그> ...]
 #   handoff-index.sh stale [일수=30]
-# 저장 위치는 AGENT_SYSTEM_HOME(기본 ~/.claude/agent-system)
+# 저장 위치는 AGENT_SYSTEM_HOME(기본 ~/.agent-system, 기존 ~/.claude/agent-system 자동 호환)
 set -euo pipefail
 
-HOME_DIR="${AGENT_SYSTEM_HOME:-$HOME/.claude/agent-system}"
+if [ -z "${AGENT_SYSTEM_HOME:-}" ]; then
+  if [ -d "$HOME/.claude/agent-system" ] && [ ! -e "$HOME/.agent-system" ]; then
+    ln -s "$HOME/.claude/agent-system" "$HOME/.agent-system" 2>/dev/null || :
+  fi
+  HOME_DIR="$HOME/.agent-system"
+else
+  HOME_DIR="$AGENT_SYSTEM_HOME"
+fi
 IDX="$HOME_DIR/handoffs.tsv"
 DIR="$HOME_DIR/handoffs"
 

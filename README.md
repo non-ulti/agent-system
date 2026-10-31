@@ -1,42 +1,65 @@
 # agent-system
 
-NonUlti 개인 공통 Claude Code 플러그인. 여러 프로젝트·머신에서 공유하는 작업 컨벤션을 담는다.
-단일 repo가 플러그인이자 자기 마켓플레이스(`source: "./"`)다.
+NonUlti 개인 공통 AI 에이전트 플러그인. **Claude Code**, **Antigravity (Google)**, **Codex CLI (OpenAI)** 등 다양한 AI 플랫폼에서 공통으로 공유하는 작업 컨벤션과 세션 핸드오프를 제공합니다.
+
+어느 AI CLI에서든 작업을 멈출 때 저장하고, 다른 AI CLI에서 이어서 작업할 수 있습니다.
 
 ## 담긴 것
 
-- **save-context** — 현재 세션 작업 상태를 `.claude/HANDOFF.md`로 저장 (세션 핸드오프)
-- **load-context** — `.claude/HANDOFF.md`를 읽고 현재 상태와 대조해 복원 브리핑
+- **save-context** — 현재 세션 작업 상태(브랜치, 커밋, 미커밋 파일/규모)를 `~/.agent-system/handoffs/<슬러그>.md`로 저장
+- **load-context** — 저장된 핸드오프를 읽고 현재 repo 상태와 대조해 복원 브리핑
+- **setup-statusline** — Claude CLI 입력창 아래에 브랜치·토큰·비용을 표시하는 커스텀 상태바 (Claude 전용)
 
-두 스킬은 슬래시(`/agent-system:save-context` — `agent-system`이 플러그인 이름 접두사)로도, 자연어("컨텍스트 저장해줘")로도 호출된다.
+스킬은 슬래시 커맨드(`/agent-system:save-context` 등) 또는 자연어("컨텍스트 저장해줘", "이어서 하자")로 자유롭게 호출됩니다.
 
-> 명령 표기: `/plugin ...`은 Claude Code 세션 안에서 쓰는 슬래시 커맨드, `claude plugin ...`은 셸에서 쓰는 CLI다. 같은 동작의 두 인터페이스이며 편한 쪽을 쓰면 된다.
+## 플랫폼별 설치 (머신당 1회)
 
-## 설치 (각 머신에서)
-
-```
+### 1. Claude Code
+```bash
 /plugin marketplace add NonUlti/agent-system
 /plugin install agent-system@agent-system
 ```
+(또는 셸에서 `claude plugin marketplace add NonUlti/agent-system && claude plugin install agent-system@agent-system`)
 
-설치 후 Claude Code를 재시작하면 적용된다. (user scope가 기본)
+### 2. OpenAI Codex CLI
+```bash
+codex plugin marketplace add NonUlti/agent-system
+codex plugin add agent-system@agent-system
+```
 
-## 사용
+### 3. Google Antigravity
+```bash
+agy plugin install NonUlti/agent-system
+```
+(로컬 레포지토리 직접 설치 시: `agy plugin install /path/to/agent-system`)
 
-- 작업을 멈출 때: `/agent-system:save-context`
-- 이어서 할 때(새 세션): `/agent-system:load-context`
+---
 
-`save-context`는 `.claude/HANDOFF.md`만 쓰고 커밋하지 않는다. 다른 머신으로 옮기려면 그 파일을 직접 커밋·push 하고, 받는 머신에서 `git pull` 한다.
+## 공통 초기화 (권장)
+
+플러그인 설치 후 로컬 환경에 공통 핸드오프 디렉토리(`~/.agent-system`) 및 스크립트 도구를 심링크합니다:
+```bash
+./setup.sh
+```
+*기존 `~/.claude/agent-system`에 저장된 이전 핸드오프 내역이 있다면 자동으로 심링크되어 보존됩니다.*
+
+## 사용법
+
+- **작업을 멈출 때:** `/agent-system:save-context` (또는 "컨텍스트 저장")
+- **이어서 할 때:** `/agent-system:load-context` (또는 "지난번 작업 복원", "이어서 하자")
+
+어느 CLI에서 저장하든 공통 저장소(`~/.agent-system`)에 기록되므로, **Claude Code에서 저장하고 Codex나 Antigravity에서 복원하여 이어서 작업**할 수 있습니다.
 
 ## 업데이트 (내용 수정 후)
 
 1. `skills/` 등 수정
-2. 버전 bump — `.claude-plugin/plugin.json`과 `marketplace.json`의 `version` **둘 다** 같은 값으로
-3. 권장: `claude plugin validate . --strict`
-4. `git commit`
-5. `git push` — 브랜치를 push 한다. `source: "./"`가 기본 브랜치를 추적하므로 **이 push가 실제 전파 경로**다.
-6. (선택) `claude plugin tag --push` — 두 매니페스트의 버전 일치를 검증하고 `agent-system--v<버전>` 릴리스 태그를 남긴다. 전파용이 아니라 릴리스 마킹용.
-7. 각 머신: `/plugin marketplace update agent-system` → `/plugin update agent-system` → 재시작
+2. 버전 bump — `.claude-plugin/plugin.json`, `marketplace.json`, 그리고 루트 `plugin.json` 3곳의 `version` 일치
+3. 검증: `agy plugin validate .`
+4. `git commit` & `git push`
+5. 각 머신에서 플러그인 업데이트:
+   - Claude: `/plugin marketplace update agent-system` → `/plugin update agent-system`
+   - Codex: `codex plugin marketplace upgrade agent-system`
+   - Antigravity: `agy plugin install NonUlti/agent-system`
 
 ## 개발/로컬 테스트
 
