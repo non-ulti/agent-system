@@ -14,15 +14,23 @@ description: Use at the start of a session to resume prior work — when the use
 - 새 세션에서 지난 작업을 이어갈 때
 - 사용자가 "이어서 하자", "load context", "지난번 거 복원"을 요청할 때
 
+## 준비 — 색인 스크립트와 저장소 위치
+
+절차에 들어가기 전에 한 번 실행한다. 저장소 위치(옛 `~/.claude/agent-system` 호환 링크, `AGENT_SYSTEM_HOME` 설정)는 스크립트가 정하므로 스킬에서 경로를 직접 조립하지 않는다 — save-context와 다른 폴더를 읽으면 저장한 핸드오프가 "없다"고 나온다.
+```bash
+INDEX_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh}"     # Claude Code
+[ -f "$INDEX_SH" ] || INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"         # Codex·Antigravity (setup.sh가 건 링크)
+[ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다 — 플러그인 폴더에서 ./setup.sh를 먼저 실행하세요" >&2; exit 1; }
+echo "$INDEX_SH"; "$INDEX_SH" init     # 둘째 줄 = 저장소 경로(AS_HOME)
+```
+출력된 두 경로(`INDEX_SH`, `AS_HOME`)를 이후 명령에 절대경로로 그대로 쓴다. 명령마다 셸이 새로 떠서 변수가 이어지지 않는다.
+
 ## 절차
 
-0. **어떤 핸드오프를 복원할지 고른다.** 핸드오프는 `~/.agent-system/handoffs/<슬러그>.md`에 저장되고, 중앙 색인(`~/.agent-system/handoffs.tsv`)이 그 목록을 모은다. 색인 컬럼은 `슬러그 \t 저장시각 \t 목표 \t 상태 \t 관련repo` 5개다. (기존 `~/.claude/agent-system`이 있다면 자동으로 호환 심링크된다.)
+0. **어떤 핸드오프를 복원할지 고른다.** 핸드오프는 `<AS_HOME>/handoffs/<슬러그>.md`에 저장되고, 중앙 색인(`<AS_HOME>/handoffs.tsv`)이 그 목록을 모은다. 색인 컬럼은 `슬러그 \t 저장시각 \t 목표 \t 상태 \t 관련repo` 5개다.
    ```bash
-   DIR="$HOME/.agent-system"
-   [ ! -d "$DIR" ] && [ -d "$HOME/.claude/agent-system" ] && ln -s "$HOME/.claude/agent-system" "$DIR"
-   IDX="$DIR/handoffs.tsv"
-   [ -s "$IDX" ] && cat "$IDX"
-   ls "$DIR/handoffs/"*.md 2>/dev/null     # 색인에 없는 고아 파일 확인용
+   cat "<AS_HOME>/handoffs.tsv"
+   ls "<AS_HOME>/handoffs/"*.md 2>/dev/null     # 색인에 없는 고아 파일 확인용
    ```
    - **사용자가 인자(슬러그 일부/목표 키워드)를 줬으면** 색인 1번째 칸(슬러그)과 대조해 하나로 좁힌다. 정확히 하나면 그걸 대상으로, 여럿이 맞으면 후보만 보여주고 고르게 한다.
    - **인자가 없으면:**
@@ -32,27 +40,17 @@ description: Use at the start of a session to resume prior work — when the use
    - 목록을 보여줄 때 **정리 후보**를 함께 알린다: 저장시각이 30일 넘은 항목, 그리고 `handoffs/`에 있는데 색인에 없는 고아 파일. "끝났으면 보관할 수 있다"고 한 줄만 덧붙이고, 이동·삭제는 사용자가 시키기 전엔 하지 않는다.
    - **일괄 보관**: 사용자가 "오래된 것 정리해줘"처럼 요청하면 30일 넘은 목록을 뽑아 보여주고, 보관할 슬러그를 사용자가 확인한 뒤에만 옮긴다. 목록 중 일부만 고르면 그 슬러그만 넘긴다.
      ```bash
-     INDEX_SH=""
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh" ]; then
-       INDEX_SH="$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh"
-     elif [ -f "$HOME/.agent-system/bin/handoff-index.sh" ]; then
-       INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"
-     else
-       INDEX_SH="$(find "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" -name "handoff-index.sh" 2>/dev/null | head -1)"
-     fi
-     [ -n "$INDEX_SH" ] && [ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다" >&2; exit 1; }
-     "$INDEX_SH" stale 30          # 슬러그 · 저장시각 · 상태
-     "$INDEX_SH" archive <슬러그> [<슬러그> ...]
+     "<INDEX_SH>" stale 30          # 슬러그 · 저장시각 · 상태
+     "<INDEX_SH>" archive <슬러그> [<슬러그> ...]
      ```
      보관은 `handoffs/archive/`로 옮기는 것이고 삭제하지 않는다.
    - 고른 항목의 슬러그를 `SLUG`로 삼는다(아래 1·2번에서 사용).
 
 1. **핸드오프 파일을 읽는다.**
    ```bash
-   DIR="${AGENT_SYSTEM_HOME:-$HOME/.agent-system}"
-   cat "$DIR/handoffs/$SLUG.md" 2>/dev/null || cat "$HOME/.claude/agent-system/handoffs/$SLUG.md" 2>/dev/null
+   cat "<AS_HOME>/handoffs/$SLUG.md"
    ```
-   - 색인엔 있으나 파일이 없으면(색인이 낡음): "색인엔 있으나 핸드오프 파일이 사라졌습니다"라고 알리고, 그 줄을 색인에서 지울지 제안한 뒤 다시 고르게 한다. 색인 줄 삭제는 `"${INDEX_SH:-$HOME/.agent-system/bin/handoff-index.sh}" remove "$SLUG"`.
+   - 색인엔 있으나 파일이 없으면(색인이 낡음): "색인엔 있으나 핸드오프 파일이 사라졌습니다"라고 알리고, 그 줄을 색인에서 지울지 제안한 뒤 다시 고르게 한다. 색인 줄 삭제는 `"<INDEX_SH>" remove "$SLUG"`.
    - 색인이 아예 없으면: "저장된 핸드오프가 없습니다."로 종료한다.
    - 본문 `- 저장:` 시각과 색인 저장시각이 다르면 브리핑에 표시한다(어느 쪽이 나중 것인지 포함).
 

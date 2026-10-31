@@ -18,6 +18,17 @@ description: Use when the user wants to save the current session's working state
 - 사용자가 "컨텍스트 저장", "핸드오프 정리", "save context"를 요청할 때
 - 저장해 둔 작업이 끝나서 목록에서 치우고 싶을 때 → 아래 "완료 처리"
 
+## 준비 — 색인 스크립트와 저장소 위치
+
+절차에 들어가기 전에 한 번 실행한다. 저장소 위치(옛 `~/.claude/agent-system` 호환 링크, `AGENT_SYSTEM_HOME` 설정)는 스크립트가 정하므로 스킬에서 경로를 직접 조립하지 않는다 — 곳곳에서 조립하면 한 곳만 다르게 고쳐져 핸드오프와 색인이 서로 다른 폴더에 쌓인다.
+```bash
+INDEX_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh}"     # Claude Code
+[ -f "$INDEX_SH" ] || INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"         # Codex·Antigravity (setup.sh가 건 링크)
+[ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다 — 플러그인 폴더에서 ./setup.sh를 먼저 실행하세요" >&2; exit 1; }
+echo "$INDEX_SH"; "$INDEX_SH" init     # 둘째 줄 = 저장소 경로(AS_HOME)
+```
+출력된 두 경로(`INDEX_SH`, `AS_HOME`)를 이후 명령에 절대경로로 그대로 쓴다. 명령마다 셸이 새로 떠서 변수가 이어지지 않는다.
+
 ## 절차
 
 1. **슬러그를 정한다.** 슬러그는 이 작업을 식별하는 짧은 이름이자 파일명이 된다. 영문/숫자/`-`/`_`만 쓰고 소문자로 통일한다(공백→`-`).
@@ -44,9 +55,7 @@ description: Use when the user wants to save the current session's working state
 
 4. **아래 템플릿으로 핸드오프 파일을 쓴다.** 같은 슬러그면 그 파일만 덮어쓴다(다른 작업 파일은 건드리지 않는다). 덮어쓸 때 `- 저장:` 줄도 반드시 `$NOW`로 다시 찍는다 — 본문 시각이 옛것으로 남으면 색인 시각과 서로 달라 어느 쪽이 정본인지 헷갈린다. 필수 4섹션은 항상, 선택 3섹션은 해당 내용이 있을 때만. 빈 섹션을 억지로 남기지 않는다:
    ```bash
-   [ ! -e "$HOME/.agent-system" ] && [ -d "$HOME/.claude/agent-system" ] && ln -s "$HOME/.claude/agent-system" "$HOME/.agent-system" 2>/dev/null || :
-   DIR="$HOME/.agent-system/handoffs"; mkdir -p "$DIR"
-   # 파일: $DIR/<슬러그>.md
+   # 파일: <AS_HOME>/handoffs/<슬러그>.md   (폴더는 init이 만들어 둔다)
    ```
 
 5. **중앙 색인을 갱신한다.** load-context가 목록으로 보여주는 한 줄이다. 컬럼 5개: `슬러그 \t 저장시각 \t 목표 \t 상태 \t 관련repo`.
@@ -54,16 +63,7 @@ description: Use when the user wants to save the current session's working state
    - `상태` = 지금 어디까지 왔고 다음 할 일이 무엇인지 한 줄. 저장할 때마다 바뀐다. 사람이 목록에서 "어느 걸 이어서 할지" 고르는 데 실제로 쓰는 칸이라 날짜 약속("9/4 복귀 후 확인")이 있으면 여기에 넣는다.
    - `관련repo` = 작업 repo basename을 쉼표로(없으면 `-`). 주변 repo는 넣지 않는다.
    ```bash
-   INDEX_SH=""
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh" ]; then
-     INDEX_SH="$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh"
-   elif [ -f "$HOME/.agent-system/bin/handoff-index.sh" ]; then
-     INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"
-   else
-     INDEX_SH="$(find "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" -name "handoff-index.sh" 2>/dev/null | head -1)"
-   fi
-   [ -n "$INDEX_SH" ] && [ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다" >&2; exit 1; }
-   "$INDEX_SH" upsert "$SLUG" "$NOW" "<목표 한 줄>" "<상태 한 줄>" "<repo basename들>"
+   "<INDEX_SH>" upsert "$SLUG" "$NOW" "<목표 한 줄>" "<상태 한 줄>" "<repo basename들>"
    ```
    스크립트가 같은 슬러그 줄을 지우고 새 줄을 넣는다. 칸 값의 탭·줄바꿈은 공백으로 바꾸므로 TSV 칸 수가 틀어지지 않는다. 쓰기 전 색인을 `handoffs.tsv.bak` 하나로 복사해 둔다(이전 `.bak`은 덮어씀). 색인은 목록용 요약일 뿐 정본은 `handoffs/<슬러그>.md`다. 색인·핸드오프 모두 로컬 전용이다.
 
@@ -76,16 +76,7 @@ description: Use when the user wants to save the current session's working state
 작업이 끝났다고 사용자가 말하면(`save-context --done <슬러그>`, "kuro 끝났어 보관해줘") 핸드오프를 보관함으로 옮기고 색인에서 지운다. 색인은 "이어서 할 것"의 목록이라, 끝난 것이 남아 있으면 고를 때마다 전체를 다시 읽어야 한다.
 
 ```bash
-INDEX_SH=""
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh" ]; then
-  INDEX_SH="$CLAUDE_PLUGIN_ROOT/scripts/handoff-index.sh"
-elif [ -f "$HOME/.agent-system/bin/handoff-index.sh" ]; then
-  INDEX_SH="$HOME/.agent-system/bin/handoff-index.sh"
-else
-  INDEX_SH="$(find "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini" -name "handoff-index.sh" 2>/dev/null | head -1)"
-fi
-[ -n "$INDEX_SH" ] && [ -f "$INDEX_SH" ] || { echo "handoff-index.sh를 찾을 수 없습니다" >&2; exit 1; }
-"$INDEX_SH" archive "$SLUG"     # 여러 개면 슬러그를 이어서 적는다
+"<INDEX_SH>" archive "$SLUG"     # 여러 개면 슬러그를 이어서 적는다
 ```
 `handoffs/<슬러그>.md`를 `handoffs/archive/`로 옮기고 색인 줄을 지운다.
 

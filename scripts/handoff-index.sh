@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 핸드오프 색인(handoffs.tsv) 갱신·보관
 # 사용:
+#   handoff-index.sh init                      # 저장소를 준비하고 그 경로를 출력
 #   handoff-index.sh upsert <슬러그> <저장시각> <목표> <상태> <관련repo>
 #   handoff-index.sh remove <슬러그>
 #   handoff-index.sh archive <슬러그> [<슬러그> ...]
@@ -69,8 +70,11 @@ case "$cmd" in
     cutoff="$(date -v-"${days}"d '+%Y-%m-%d' 2>/dev/null || date -d "-${days} days" '+%Y-%m-%d')"
     awk -F'\t' -v c="$cutoff" 'substr($2,1,10) < c { print $1 "\t" $2 "\t" $4 }' "$IDX"
     ;;
+  init)
+    echo "$HOME_DIR"
+    ;;
   *)
-    sed -n '2,8p' "$0" >&2
+    sed -n '2,9p' "$0" >&2
     exit 2
     ;;
 esac
