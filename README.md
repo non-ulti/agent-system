@@ -6,8 +6,8 @@ NonUlti 개인 공통 AI 에이전트 플러그인. **Claude Code**, **Antigravi
 
 ## 담긴 것
 
-- **save-context** — 현재 세션 작업 상태(브랜치, 커밋, 미커밋 파일/규모)를 `~/.agent-system/handoffs/<슬러그>.md`로 저장
-- **load-context** — 저장된 핸드오프를 읽고 현재 repo 상태와 대조해 복원 브리핑
+- **save-context** — 현재 세션을 `~/.agent-system/handoffs/<슬러그>.md`로 저장. 자동 압축과 달리 다음 세션이 다시 알아낼 수 없는 것(사용자 지시, 해봤는데 안 된 방법, 조사로 확인한 사실)을 `놓치면 안 되는 것`으로 골라 그대로 남기고, repo 상태는 `handoff-index.sh baseline` 기준값으로 기록
+- **load-context** — 저장된 핸드오프를 현재 repo 상태와 대조해 브리핑. `놓치면 안 되는 것`은 요약 없이 그대로 전하고, 작업 중 압축되면 핸드오프를 다시 읽는다
 - **/agent-system:setup-statusline** (커맨드) — Claude CLI 입력창 아래에 브랜치·토큰·비용을 표시하는 커스텀 상태바. Claude Code 전용이라 스킬이 아닌 `commands/`에 두며, Codex·Antigravity에서는 로드되지 않는다
 
 스킬은 슬래시 커맨드(`/agent-system:save-context` 등) 또는 자연어("컨텍스트 저장해줘", "이어서 하자")로 자유롭게 호출됩니다.
@@ -47,6 +47,9 @@ agy plugin install NonUlti/agent-system
 
 - **작업을 멈출 때:** `/agent-system:save-context` (또는 "컨텍스트 저장")
 - **이어서 할 때:** `/agent-system:load-context` (또는 "지난번 작업 복원", "이어서 하자")
+- **컨텍스트가 차기 전에 저장한다.** 자동 압축이 먼저 일어나면 압축 이전의 디테일은 save도 되살릴 수 없다(그 경우 save가 빠졌을 수 있는 부분을 알려 준다).
+- **repo 규칙은 AGENTS.md로.** 작업이 끝나도 유효한 규칙(테스트 명령의 함정 등)을 찾으면 save가 그 repo의 `AGENTS.md`에 옮기자고 제안한다. AGENTS.md는 세 CLI가 공통으로 읽지만, Claude Code는 `CLAUDE.md`가 있으면 AGENTS.md를 읽지 않으므로 CLAUDE.md에 `@AGENTS.md` 한 줄을 함께 제안한다(2026-11 실측).
+- **GitHub·GitLab 모두 쓸 수 있다.** 기준값에 원격 종류가 남아, PR/MR 상태를 확인할 때 `gh`/`glab` 중 맞는 도구를 고른다(조회는 사용자가 원할 때만).
 
 어느 CLI에서 저장하든 공통 저장소(`~/.agent-system`)에 기록되므로, **Claude Code에서 저장하고 Codex나 Antigravity에서 복원하여 이어서 작업**할 수 있습니다.
 
