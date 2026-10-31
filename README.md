@@ -8,7 +8,7 @@ NonUlti 개인 공통 AI 에이전트 플러그인. **Claude Code**, **Antigravi
 
 - **save-context** — 현재 세션 작업 상태(브랜치, 커밋, 미커밋 파일/규모)를 `~/.agent-system/handoffs/<슬러그>.md`로 저장
 - **load-context** — 저장된 핸드오프를 읽고 현재 repo 상태와 대조해 복원 브리핑
-- **setup-statusline** — Claude CLI 입력창 아래에 브랜치·토큰·비용을 표시하는 커스텀 상태바 (Claude 전용)
+- **/agent-system:setup-statusline** (커맨드) — Claude CLI 입력창 아래에 브랜치·토큰·비용을 표시하는 커스텀 상태바. Claude Code 전용이라 스킬이 아닌 `commands/`에 두며, Codex·Antigravity에서는 로드되지 않는다
 
 스킬은 슬래시 커맨드(`/agent-system:save-context` 등) 또는 자연어("컨텍스트 저장해줘", "이어서 하자")로 자유롭게 호출됩니다.
 
