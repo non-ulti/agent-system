@@ -2,7 +2,7 @@
   "name": "agent-system",
   "displayName": "Agent System",
   "version": "0.3.0",
-  "description": "NonUlti \uac1c\uc778 \uacf5\ud1b5 \uc791\uc5c5 \ucee8\ubca4\uc158 \u2014 \uc138\uc158 \ud578\ub4dc\uc624\ud504 \uc2a4\ud0ac(save-context/load-context)",
+  "description": "NonUlti 개인 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context)",
   "author": {
     "name": "NonUlti"
   },
