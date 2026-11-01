@@ -3,13 +3,13 @@
   "owner": {
     "name": "NonUlti"
   },
-  "description": "NonUlti 개인 공통 플러그인 마켓플레이스",
+  "description": "agent-system 플러그인 마켓플레이스",
   "plugins": [
     {
       "name": "agent-system",
       "source": "./",
       "version": "0.3.0",
-      "description": "개인 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context) + statusLine 커스텀 상태바"
+      "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context) + statusLine 커스텀 상태바"
     }
   ]
 }

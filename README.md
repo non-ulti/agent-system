@@ -1,6 +1,6 @@
 # agent-system
 
-NonUlti 개인 공통 AI 에이전트 플러그인. **Claude Code**, **Antigravity (Google)**, **Codex CLI (OpenAI)** 등 다양한 AI 플랫폼에서 공통으로 공유하는 작업 컨벤션과 세션 핸드오프를 제공합니다.
+여러 AI 에이전트 CLI에서 함께 쓰는 공통 플러그인. **Claude Code**, **Antigravity (Google)**, **Codex CLI (OpenAI)** 등 다양한 AI 플랫폼에서 공통으로 공유하는 작업 컨벤션과 세션 핸드오프를 제공합니다.
 
 어느 AI CLI에서든 작업을 멈출 때 저장하고, 다른 AI CLI에서 이어서 작업할 수 있습니다.
 
