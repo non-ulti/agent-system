@@ -1,15 +1,15 @@
 {
   "name": "agent-system",
   "owner": {
-    "name": "NonUlti"
+    "name": "Choi Junsung"
   },
-  "description": "NonUlti \uac1c\uc778 \uacf5\ud1b5 \ud50c\ub7ec\uadf8\uc778 \ub9c8\ucf13\ud50c\ub808\uc774\uc2a4",
+  "description": "agent-system 플러그인 마켓플레이스",
   "plugins": [
     {
       "name": "agent-system",
       "source": "./",
       "version": "0.3.0",
-      "description": "\uac1c\uc778 \uacf5\ud1b5 \uc791\uc5c5 \ucee8\ubca4\uc158 \u2014 \uc138\uc158 \ud578\ub4dc\uc624\ud504 \uc2a4\ud0ac(save-context/load-context) + statusLine \ucee4\uc2a4\ud140 \uc0c1\ud0dc\ubc14"
+      "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context) + statusLine 커스텀 상태바"
     }
   ]
 }

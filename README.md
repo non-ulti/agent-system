@@ -1,6 +1,6 @@
 # agent-system
 
-NonUlti 개인 공통 AI 에이전트 플러그인. **Claude Code**, **Antigravity (Google)**, **Codex CLI (OpenAI)** 등 다양한 AI 플랫폼에서 공통으로 공유하는 작업 컨벤션과 세션 핸드오프를 제공합니다.
+여러 AI 에이전트 CLI에서 함께 쓰는 공통 플러그인. **Claude Code**, **Antigravity (Google)**, **Codex CLI (OpenAI)** 등 다양한 AI 플랫폼에서 공통으로 공유하는 작업 컨벤션과 세션 핸드오프를 제공합니다.
 
 어느 AI CLI에서든 작업을 멈출 때 저장하고, 다른 AI CLI에서 이어서 작업할 수 있습니다.
 
@@ -85,4 +85,3 @@ Claude CLI 입력창 아래에 브랜치 · 모델 · effort · 비용 / 컨텍�
 - `statusline/statusline.py`를 `~/.claude/statusline.py`로 심링크하고,
   `~/.claude/settings.json`에 `statusLine` 키만 머지한다(기존 설정은 `~/.claude/backups/`에 백업).
 - 시스템 `python3`만 사용(외부 의존성 없음). 새 세션/재시작에서 반영된다.
-- 설계: `docs/specs/2026-06-13-statusline-design.md`

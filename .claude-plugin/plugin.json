@@ -1,8 +1,8 @@
 {
   "name": "agent-system",
   "version": "0.3.0",
-  "description": "\uac1c\uc778 \uacf5\ud1b5 \uc791\uc5c5 \ucee8\ubca4\uc158 \u2014 \uc138\uc158 \ud578\ub4dc\uc624\ud504 \uc2a4\ud0ac(save-context/load-context) + statusLine \ucee4\uc2a4\ud140 \uc0c1\ud0dc\ubc14. \uc810\uc9c4 \ud655\uc7a5 \uc608\uc815.",
+  "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context) + statusLine 커스텀 상태바. 점진 확장 예정.",
   "author": {
-    "name": "NonUlti"
+    "name": "Choi Junsung"
   }
 }
