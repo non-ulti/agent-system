@@ -4,7 +4,7 @@
   "version": "0.3.0",
   "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프 스킬(save-context/load-context)",
   "author": {
-    "name": "NonUlti"
+    "name": "Choi Junsung"
   },
   "homepage": "https://github.com/non-ulti/agent-system",
   "repository": "https://github.com/non-ulti/agent-system",

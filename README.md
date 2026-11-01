@@ -85,4 +85,3 @@ Claude CLI 입력창 아래에 브랜치 · 모델 · effort · 비용 / 컨텍�
 - `statusline/statusline.py`를 `~/.claude/statusline.py`로 심링크하고,
   `~/.claude/settings.json`에 `statusLine` 키만 머지한다(기존 설정은 `~/.claude/backups/`에 백업).
 - 시스템 `python3`만 사용(외부 의존성 없음). 새 세션/재시작에서 반영된다.
-- 설계: `docs/specs/2026-06-13-statusline-design.md`
