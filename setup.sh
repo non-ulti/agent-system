@@ -12,13 +12,15 @@ if [ -d "$CLAUDE_DIR/agent-system" ] && [ ! -e "$AGENT_SYSTEM_DIR" ]; then
   ln -s "$CLAUDE_DIR/agent-system" "$AGENT_SYSTEM_DIR"
 fi
 
-mkdir -p "$AGENT_SYSTEM_DIR/bin" "$AGENT_SYSTEM_DIR/handoffs"
-chmod +x "$SCRIPT_DIR/scripts/handoff-index.sh"
+mkdir -p "$AGENT_SYSTEM_DIR/bin" "$AGENT_SYSTEM_DIR/handoffs" "$AGENT_SYSTEM_DIR/wiki/common"
+chmod +x "$SCRIPT_DIR/scripts/handoff-index.sh" "$SCRIPT_DIR/scripts/wiki-index.sh"
 ln -sf "$SCRIPT_DIR/scripts/handoff-index.sh" "$AGENT_SYSTEM_DIR/bin/handoff-index.sh"
+ln -sf "$SCRIPT_DIR/scripts/wiki-index.sh" "$AGENT_SYSTEM_DIR/bin/wiki-index.sh"
 
 echo "✓ agent-system 공통 환경 설정 완료!"
-echo "  저장소: $AGENT_SYSTEM_DIR/handoffs"
-echo "  도구:   $AGENT_SYSTEM_DIR/bin/handoff-index.sh"
+echo "  핸드오프 저장소: $AGENT_SYSTEM_DIR/handoffs"
+echo "  전역 위키 저장소: $AGENT_SYSTEM_DIR/wiki"
+echo "  도구:            $AGENT_SYSTEM_DIR/bin/{handoff-index.sh,wiki-index.sh}"
 
 if [ -d "$CLAUDE_DIR" ] && [ "${1:-}" != "--from-statusline" ]; then
   echo ""
