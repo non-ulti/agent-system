@@ -1,6 +1,6 @@
 {
   "name": "agent-system",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프(save-context/load-context) + 3계층 LLM Wiki(wiki) + statusLine 커스텀 상태바.",
   "author": {
     "name": "Choi Junsung"

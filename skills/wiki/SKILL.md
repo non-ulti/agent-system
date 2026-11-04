@@ -49,6 +49,11 @@ WIKI_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/wiki-index.sh}"
 - `WS_WIKI`가 `-`이면 현재 위치 위쪽에 `docs/wiki`가 없는 상태다. 새 문서를 기록하기 전에 어디에 만들지 사용자에게 확인한 뒤 둘 중 하나로 초기화한다:
   - 여러 프로젝트를 묶는 상위 폴더(예: `company/`, `personal/`): `"$WIKI_SH" init-ws <워크스페이스경로>` — 바로 아래 1단계 폴더명이 프로젝트 스코프가 된다.
   - 프로젝트 하나만 쓰는 repo: `"$WIKI_SH" init-project <프로젝트경로>` — `docs/wiki/.project` 표식이 생기고, repo 안 어느 하위 폴더에서든 프로젝트 스코프가 그 repo 이름으로 고정된다.
+- 만들 위치가 git repo 안이면(`git -C <경로> rev-parse --show-toplevel` 성공) 위키를 git에서 어떻게 다룰지도 함께 묻고, 답에 맞춰 같은 명령에 옵션을 붙인다:
+  - repo에 같이 커밋 → 옵션 없음
+  - 이 기기에서만 무시 → `--ignore local` (`.git/info/exclude`에 추가, repo 파일은 바뀌지 않음 — 회사·팀 repo에 개인 위키를 둘 때)
+  - 팀 전체가 무시 → `--ignore shared` (repo 루트 `.gitignore`에 추가, 이 변경은 커밋해야 함)
+  - 무시하면 위키가 git으로 백업되지 않는다는 점을 함께 알린다. 이미 만든 위키에 같은 `init-*` 명령을 옵션과 함께 다시 실행하면 기존 내용은 그대로 두고 무시 설정만 추가된다. 위키 파일이 이미 git에 추적되고 있으면 스크립트가 `git rm -r --cached` 안내를 출력하는데, 실행 여부는 사용자에게 확인한다.
 - 워크스페이스 루트 자체에서 실행하면 `PROJECT=common`이다.
 
 ---
