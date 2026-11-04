@@ -74,6 +74,8 @@ claude plugin install agent-system@agent-system
 ```
 주의: install은 커밋 SHA로 스냅샷을 뜬다. 파일을 고쳤다면 커밋 + 버전 bump 후 marketplace update / plugin update 하고 세션을 재시작해야 반영된다.
 
+`scripts/wiki-index.sh`를 고쳤다면 `scripts/tests/wiki-index-test.sh`를 실행해 기존 동작이 그대로인지 확인한다(임시 폴더에서만 동작, 실제 `~/.agent-system`은 건드리지 않음).
+
 ## statusLine (커스텀 상태바)
 
 Claude CLI 입력창 아래에 브랜치 · 모델 · effort · 비용 / 컨텍스트막대 · 토큰 · 레이트리밋을 표시하는 상태바.
