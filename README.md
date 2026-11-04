@@ -30,9 +30,10 @@ codex plugin add agent-system@agent-system
 
 ### 3. Google Antigravity
 ```bash
-agy plugin install NonUlti/agent-system
+git clone https://github.com/non-ulti/agent-system.git   # 이미 받아 둔 repo가 있으면 생략
+agy plugin install /path/to/agent-system
 ```
-(로컬 레포지토리 직접 설치 시: `agy plugin install /path/to/agent-system`)
+(`agy plugin install`은 GitHub 주소를 받지 않고 로컬 폴더만 받는다. 폴더를 복사해 설치하므로 repo를 `git pull`한 뒤 다시 실행해야 업데이트된다.)
 
 ---
 
@@ -63,7 +64,7 @@ agy plugin install NonUlti/agent-system
 5. 각 머신에서 플러그인 업데이트:
    - Claude: `/plugin marketplace update agent-system` → `/plugin update agent-system`
    - Codex: `codex plugin marketplace upgrade agent-system`
-   - Antigravity: `agy plugin install NonUlti/agent-system`
+   - Antigravity: repo에서 `git pull` 후 `agy plugin install /path/to/agent-system`
 
 ## 개발/로컬 테스트
 
