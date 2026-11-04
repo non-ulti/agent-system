@@ -2,8 +2,11 @@
 # 계층형 LLM Wiki(프로젝트 · 워크스페이스 공통 · 전역 공통) 경로 탐색 및 색인(wiki.tsv / index.md / log.md) 관리
 # 사용:
 #   wiki-index.sh resolve [기준경로=.]                                    # 현재 위치 기준 3계층 위키 경로와 프로젝트 슬러그 출력 (읽기 전용)
-#   wiki-index.sh init-ws <워크스페이스경로> [제목]                       # 여러 프로젝트를 묶는 <워크스페이스경로>/docs/wiki 초기화 및 등록
-#   wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그]            # 단일 프로젝트 전용 <프로젝트경로>/docs/wiki 초기화 (.project 표식)
+#   wiki-index.sh init-ws <워크스페이스경로> [제목] [--ignore local|shared]          # 여러 프로젝트를 묶는 <워크스페이스경로>/docs/wiki 초기화 및 등록
+#   wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그] [--ignore local|shared] # 단일 프로젝트 전용 <프로젝트경로>/docs/wiki 초기화 (.project 표식)
+#     --ignore local  : .git/info/exclude에 위키 폴더 추가 (이 기기에서만 무시, repo 파일 변경 없음)
+#     --ignore shared : repo 루트 .gitignore에 위키 폴더 추가 (팀 전체 무시, 커밋 필요)
+#     생략            : 무시 설정 안 함 (위키를 repo에 커밋하는 경우). 이미 만든 위키에 다시 실행하면 무시 설정만 추가된다
 #   wiki-index.sh upsert <위키루트> <스코프> <슬러그> <시각> <제목> <요약> [태그]  # 색인 갱신 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh remove <위키루트> <스코프> <슬러그> [사유]              # 색인에서 제거 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh rebuild <위키루트>                                      # wiki.tsv 기준으로 index.md 재생성
@@ -53,6 +56,72 @@ md_cell() {
 
 phys_dir() {
   (cd "$1" 2>/dev/null && pwd -P)
+}
+
+# init-ws/init-project 인자 분리: --ignore 값은 IGNORE_MODE, 나머지 위치 인자는 INIT_POS 배열
+parse_init_args() {
+  IGNORE_MODE=""
+  INIT_POS=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ignore)
+        [ $# -ge 2 ] || die "--ignore 값이 필요합니다: local 또는 shared"
+        IGNORE_MODE="$2"; shift 2 ;;
+      --ignore=*) IGNORE_MODE="${1#--ignore=}"; shift ;;
+      --) shift; while [ $# -gt 0 ]; do INIT_POS+=("$1"); shift; done ;;
+      -*) die "알 수 없는 옵션: $1" ;;
+      *) INIT_POS+=("$1"); shift ;;
+    esac
+  done
+  case "$IGNORE_MODE" in
+    ""|local|shared) ;;
+    *) die "--ignore 값은 local 또는 shared만 쓸 수 있습니다: $IGNORE_MODE" ;;
+  esac
+}
+
+# 위키 폴더를 git 무시 목록에 추가한다 (git repo 밖이면 건너뜀, 같은 줄이 있으면 다시 넣지 않음)
+#   local  → <repo>/.git/info/exclude : 이 기기에서만 적용, repo 파일은 바뀌지 않음
+#   shared → <repo>/.gitignore        : 팀 전체에 적용, 이 변경은 커밋해야 함
+apply_ignore() {
+  local wiki_root="$1" mode="$2"
+  [ -n "$mode" ] || return 0
+
+  local top
+  if ! top="$(git -C "$wiki_root" rev-parse --show-toplevel 2>/dev/null)"; then
+    echo "· git repo 밖이라 무시 설정을 건너뜁니다: $wiki_root"
+    return 0
+  fi
+
+  local top_p wiki_p rel pattern file
+  top_p="$(phys_dir "$top")"
+  wiki_p="$(phys_dir "$wiki_root")"
+  rel="${wiki_p#"$top_p"/}"
+  pattern="/$rel/"
+
+  if [ "$mode" = "local" ]; then
+    file="$(git -C "$top" rev-parse --git-path info/exclude)"
+    case "$file" in /*) ;; *) file="$top/$file" ;; esac
+    mkdir -p "$(dirname "$file")"
+  else
+    file="$top/.gitignore"
+  fi
+
+  if [ -f "$file" ] && grep -qxF -- "$pattern" "$file"; then
+    echo "· 이미 무시 목록에 있습니다: $pattern ($file)"
+  else
+    if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+      printf '\n' >> "$file"
+    fi
+    printf '%s\n' "$pattern" >> "$file"
+    echo "✓ 무시 목록에 추가: $pattern ($file)"
+  fi
+  if [ "$mode" = "shared" ]; then
+    echo "  → .gitignore 변경은 커밋해야 팀에 적용됩니다"
+  fi
+
+  if [ -n "$(git -C "$top" ls-files -- "$rel")" ]; then
+    echo "⚠ git이 이미 추적 중인 위키 파일이 있어 무시가 적용되지 않습니다. 추적을 끊으려면: git -C \"$top\" rm -r --cached -- \"$rel\"" >&2
+  fi
 }
 
 ensure_wiki_root() {
@@ -218,19 +287,22 @@ case "$cmd" in
     ;;
 
   init-ws)
-    [ $# -ge 1 ] || { echo "사용법: wiki-index.sh init-ws <워크스페이스경로> [제목]" >&2; exit 2; }
-    ws_dir="$(cd "$1" && pwd)"
-    ws_name="${2:-$(basename "$ws_dir") Wiki}"
+    parse_init_args "$@"
+    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init-ws <워크스페이스경로> [제목] [--ignore local|shared]"
+    ws_dir="$(cd "${INIT_POS[0]}" && pwd)"
+    ws_name="${INIT_POS[1]:-$(basename "$ws_dir") Wiki}"
     wiki_root="$ws_dir/docs/wiki"
     ensure_wiki_root "$wiki_root" "$ws_name"
     register_ws_root "$wiki_root" "$(basename "$ws_dir")"
     echo "✓ 워크스페이스 위키 초기화 완료: $wiki_root"
+    apply_ignore "$wiki_root" "$IGNORE_MODE"
     ;;
 
   init-project)
-    [ $# -ge 1 ] || die "사용법: wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그]"
-    proj_dir="$(cd "$1" && pwd)"
-    proj_slug="$(slugify "${2:-$(basename "$proj_dir")}")"
+    parse_init_args "$@"
+    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그] [--ignore local|shared]"
+    proj_dir="$(cd "${INIT_POS[0]}" && pwd)"
+    proj_slug="$(slugify "${INIT_POS[1]:-$(basename "$proj_dir")}")"
     check_slug "스코프" "$proj_slug"
     [ "$proj_slug" != "common" ] || die "프로젝트 슬러그로 common은 쓸 수 없습니다"
     wiki_root="$proj_dir/docs/wiki"
@@ -241,6 +313,7 @@ case "$cmd" in
     printf '%s\n' "$proj_slug" > "$wiki_root/.project"
     register_ws_root "$wiki_root" "$(basename "$proj_dir")"
     echo "✓ 단일 프로젝트 위키 초기화 완료: $wiki_root (프로젝트 스코프: $proj_slug)"
+    apply_ignore "$wiki_root" "$IGNORE_MODE"
     ;;
 
   upsert)
