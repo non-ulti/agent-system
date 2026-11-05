@@ -72,5 +72,37 @@ mkdir -p "$S/tr/docs/wiki"; git -C "$S/tr" init -q; echo x > "$S/tr/docs/wiki/ol
 git -C "$S/tr" add docs >/dev/null; git -C "$S/tr" -c user.name=t -c user.email=t@example.invalid commit -qm init
 ok "T28 이미 추적 중인 위키면 경고" '"$W" init-ws "$S/tr" --ignore local 2>&1 >/dev/null | grep -q "rm -r --cached"'
 
+# link (위키가 없는 위치를 기존 위키·프로젝트에 연결)
+mkdir -p "$S/hub/docs/wiki" "$S/wt/apps/web" "$S/wt/inner/x" "$S/wtab" "$S/Spaced WT/a"
+"$W" init-ws "$S/hub" >/dev/null
+before_link="$(snap)"
+ok "T29 link 등록 전에는 위키 없음" '[ "$(val "$S/wt/apps/web" WS_WIKI)" = - ]'
+"$W" link "$S/wt" "$S/hub/docs/wiki" cjs >/dev/null
+ok "T30 link: 하위 폴더에서 연결된 위키·프로젝트" '[ "$(val "$S/wt/apps/web" WS_WIKI)" = "$S/hub/docs/wiki" ] && [ "$(val "$S/wt/apps/web" PROJECT)" = cjs ] && [ "$(val "$S/wt/apps/web" WS_ROOT)" = "$S/hub" ]'
+ok "T31 link: 경로 자체에서도 적용" '[ "$(val "$S/wt" PROJECT)" = cjs ]'
+ok "T32 link: 이름만 비슷한 옆 폴더(wtab)는 제외" '[ "$(val "$S/wtab" WS_WIKI)" = - ]'
+"$W" link "$S/wt/inner" "$S/hub/docs/wiki" inner-proj >/dev/null
+ok "T33 link: 겹치면 더 긴 경로 우선" '[ "$(val "$S/wt/inner/x" PROJECT)" = inner-proj ] && [ "$(val "$S/wt/apps" PROJECT)" = cjs ]'
+"$W" link "$S/wt" "$S/hub/docs/wiki" cjs2 >/dev/null
+ok "T34 link: 같은 경로 재등록은 교체(중복 없음)" '[ "$(grep -c "^$S/wt	" "$AGENT_SYSTEM_HOME/wiki/links.tsv")" = 1 ] && [ "$(val "$S/wt/apps" PROJECT)" = cjs2 ]'
+mkdir -p "$S/wt/docs/wiki"
+ok "T35 위쪽 docs/wiki가 있으면 link보다 우선" '[ "$(val "$S/wt/apps" WS_WIKI)" = "$S/wt/docs/wiki" ]'
+rm -rf "$S/wt/docs"
+ln -s "$S/wt" "$S/wt-link"
+ok "T36 바로가기(심링크) 경로로 들어와도 연결 적용" '[ "$(val "$S/wt-link/apps" PROJECT)" = cjs2 ]'
+"$W" link "$S/Spaced WT" "$S/hub/docs/wiki" spaced >/dev/null
+ok "T37 공백 경로 link + list 동작" '[ "$(val "$S/Spaced WT/a" PROJECT)" = spaced ] && "$W" list "$S/Spaced WT/a" >/dev/null 2>&1'
+ok "T38 위키가 아닌 폴더로 link 거부" '! "$W" link "$S/wt" "$S/wtab" x 2>/dev/null'
+ok "T39 잘못된 프로젝트 슬러그 거부" '! "$W" link "$S/wt" "$S/hub/docs/wiki" "a/b" 2>/dev/null'
+ok "T40 links 목록 출력" '"$W" links | grep -q "프로젝트: inner-proj"'
+snap_before_read="$(snap)"; "$W" resolve "$S/wt/apps" >/dev/null; "$W" list "$S/wt/apps" >/dev/null; "$W" links >/dev/null
+ok "T41 link 적용 상태에서도 resolve/list/links는 파일을 만들지 않음" '[ "$snap_before_read" = "$(snap)" ]'
+"$W" unlink "$S/wt" >/dev/null
+ok "T42 unlink 후 해당 경로는 연결 해제(다른 연결은 유지)" '[ "$(val "$S/wt/apps" WS_WIKI)" = - ] && [ "$(val "$S/wt/inner/x" PROJECT)" = inner-proj ]'
+ok "T43 없는 연결 unlink는 실패 아님" '"$W" unlink "$S/nowhere" | grep -q "없습니다"'
+mv "$S/hub/docs/wiki" "$S/hub/docs/wiki-moved"
+ok "T44 연결된 위키 폴더가 사라지면 무시하고 links에 표시" '[ "$(val "$S/wt/inner/x" WS_WIKI)" = - ] && "$W" links | grep -q "위키 폴더 없음"'
+mv "$S/hub/docs/wiki-moved" "$S/hub/docs/wiki"
+
 echo "결과: PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -46,7 +46,8 @@ WIKI_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/wiki-index.sh}"
 
 출력되는 4개 값(`GLOBAL_WIKI`, `WS_ROOT`, `WS_WIKI`, `PROJECT`)을 확인한다. `resolve`·`list`·`search`·`lint`는 읽기 전용이라 어떤 파일도 만들지 않는다 — 위키 파일은 `init-ws`·`init-project`·`upsert`·`remove`·`rebuild`에서만 생긴다.
 
-- `WS_WIKI`가 `-`이면 현재 위치 위쪽에 `docs/wiki`가 없는 상태다. 위키를 새로 만드는 절차는 [references/ingest.md](references/ingest.md)의 0단계에 있다.
+- `WS_WIKI`가 `-`이면 현재 위치 위쪽에 `docs/wiki`가 없고, `link`로 연결된 위키도 없는 상태다. 기존 위키에 연결하거나 새로 만드는 절차는 [references/ingest.md](references/ingest.md)의 0단계에 있다.
+- 위쪽에 `docs/wiki`가 없어도 `"$WIKI_SH" link`로 등록된 위치면 연결된 위키와 프로젝트가 나온다(`"$WIKI_SH" links`로 목록 확인).
 - 워크스페이스 루트 자체에서 실행하면 `PROJECT=common`이다.
 
 ---
