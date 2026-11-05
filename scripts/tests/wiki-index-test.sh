@@ -32,17 +32,18 @@ ok "T4 위키 없는 repo → git 이름" '[ "$(val "$S/bare/sub" PROJECT)" = ba
 ok "T5 단일 프로젝트 위키: 하위 폴더에서도 프로젝트 슬러그 유지(공백→하이픈)" '[ "$(val "$S/My Solo/src" PROJECT)" = my-solo ]'
 ok "T6 공백 경로에서 list 동작" '"$W" list "$S/My Solo/src" >/dev/null 2>&1'
 
-mkdir -p "$S/ws/docs/wiki/proj/t"; echo "needle -x here" > "$S/ws/docs/wiki/proj/t/a.md"
-"$W" upsert "$S/ws/docs/wiki" proj t/a "2026-11-05 00:00" "A | B" "s | t" "x|y" >/dev/null
-ok "T7 index.md 표의 | 이스케이프" 'grep -qF "[A \| B](proj/t/a.md) | s \| t | \`x\|y\`" "$S/ws/docs/wiki/index.md"'
-ok "T8 log.md 표의 | 이스케이프" 'grep -qF "A \| B — s \| t" "$S/ws/docs/wiki/log.md"'
+mkdir -p "$S/ws/docs/wiki/t"; echo "needle -x here" > "$S/ws/docs/wiki/t/a.md"
+"$W" upsert "$S/ws/docs/wiki" t/a "2026-11-05 00:00" "A | B" "s | t" "x|y" >/dev/null
+ok "T7 index.md 표의 | 이스케이프 + 범위 없는 경로" 'grep -qF "[A \| B](t/a.md) | s \| t | \`x\|y\`" "$S/ws/docs/wiki/index.md"'
+ok "T7b 카테고리 제목" 'grep -qx "## t" "$S/ws/docs/wiki/index.md"'
+ok "T8 log.md 이스케이프 + 4칸" 'grep -qF "| \`t/a.md\` | A \| B — s \| t |" "$S/ws/docs/wiki/log.md"'
 ok "T9 upsert가 워크스페이스를 roots.tsv에 등록" 'grep -q "$S/ws/docs/wiki" "$AGENT_SYSTEM_HOME/wiki/roots.tsv"'
 ok "T10 .gitignore로 .bak 제외" '[ -z "$(git -C "$S/ws" status --porcelain -- docs/wiki | grep bak)" ] && [ -f "$S/ws/docs/wiki/wiki.tsv.bak" ]'
 ok "T11 '-'로 시작하는 검색어를 패턴으로 처리" '(cd "$S/bare" && "$W" search "-x" "$S/ws/proj") | grep -q "needle -x here"'
-ok "T12 슬러그 경로 탈출(..) 거부" '! "$W" upsert "$S/ws/docs/wiki" proj "../../evil" t E s 2>/dev/null && ! grep -q evil "$S/ws/docs/wiki/wiki.tsv"'
-ok "T13 스코프에 / 거부" '! "$W" upsert "$S/ws/docs/wiki" "a/b" x t E s 2>/dev/null'
+ok "T12 슬러그 경로 탈출(..) 거부" '! "$W" upsert "$S/ws/docs/wiki" "../../evil" t E s 2>/dev/null && ! grep -q evil "$S/ws/docs/wiki/wiki.tsv"'
+ok "T13 옛 형식 호출(범위 인자) 거부" 'cp "$S/ws/docs/wiki/wiki.tsv" "$S/t13"; ! "$W" upsert "$S/ws/docs/wiki" common infra/x t E s G 2>/dev/null && cmp -s "$S/t13" "$S/ws/docs/wiki/wiki.tsv"'
 ok "T14 기존 워크스페이스 위키에 init-project 거부" '! "$W" init-project "$S/ws" 2>/dev/null && [ ! -f "$S/ws/docs/wiki/.project" ]'
-ok "T15 전역 위키 upsert는 roots.tsv에 등록 안 함" 'mkdir -p "$AGENT_SYSTEM_HOME/wiki/common/g"; echo g > "$AGENT_SYSTEM_HOME/wiki/common/g/x.md"; "$W" upsert "$AGENT_SYSTEM_HOME/wiki" common g/x t G s >/dev/null && ! grep -q "^$AGENT_SYSTEM_HOME/wiki	" "$AGENT_SYSTEM_HOME/wiki/roots.tsv"'
+ok "T15 전역 위키 upsert는 roots.tsv에 등록 안 함" 'mkdir -p "$AGENT_SYSTEM_HOME/wiki/g"; echo g > "$AGENT_SYSTEM_HOME/wiki/g/x.md"; "$W" upsert "$AGENT_SYSTEM_HOME/wiki" g/x t G s >/dev/null && ! grep -q "^$AGENT_SYSTEM_HOME/wiki	" "$AGENT_SYSTEM_HOME/wiki/roots.tsv"'
 ok "T16 lint 정상" '"$W" lint "$S/ws/docs/wiki" | grep -q "이상 없음"'
 ok "T17 인자 없이 실행 시 사용법 출력" '"$W" 2>&1 | grep -q init-project'
 

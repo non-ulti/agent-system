@@ -42,7 +42,7 @@ slugify() {
 
 die() { echo "$*" >&2; exit 2; }
 
-# 스코프·슬러그 검증: 빈 값, 절대경로, '.'/'..' 경로 조각 금지 (스코프는 '/'도 금지)
+# 스코프·슬러그 검증: 빈 값, 절대경로, '.'/'..' 경로 조각 금지 (스코프는 '/' 금지, 슬러그는 <카테고리>/<문서>로 '/' 필수)
 check_slug() {
   local kind="$1" value="$2"
   [ -n "$value" ] || die "$kind 값이 비어 있습니다"
@@ -51,6 +51,8 @@ check_slug() {
   esac
   if [ "$kind" = "스코프" ]; then
     case "$value" in */*) die "스코프에는 '/'를 쓸 수 없습니다: $value" ;; esac
+  else
+    case "$value" in */*) ;; *) die "슬러그는 <카테고리>/<문서> 형식이어야 합니다: $value" ;; esac
   fi
 }
 
@@ -140,8 +142,8 @@ ensure_wiki_root() {
     cat > "$root/log.md" <<EOF 2>/dev/null || :
 # $title 변경 이력 (Log)
 
-| 시각 | 동작 | 스코프 | 문서 | 내용 |
-|---|---|---|---|---|
+| 시각 | 동작 | 문서 | 내용 |
+|---|---|---|---|
 EOF
   fi
   if [ ! -f "$root/index.md" ]; then
@@ -160,7 +162,7 @@ register_ws_root() {
   printf '%s\t%s\t%s\n' "$wiki_root" "$ws_dir" "$ws_name" >> "$ROOTS_TSV" 2>/dev/null || :
 }
 
-# wiki.tsv (컬럼: 스코프 \t 슬러그 \t 갱신시각 \t 제목 \t 요약 \t 태그) → index.md 자동 컴파일
+# wiki.tsv (컬럼: 슬러그(<카테고리>/<문서>) \t 갱신시각 \t 제목 \t 요약 \t 태그) → index.md 자동 컴파일
 rebuild_index() {
   local root="$1"
   local title="${2:-}"
@@ -169,12 +171,10 @@ rebuild_index() {
   touch "$idx_tsv" 2>/dev/null || :
 
   if [ -z "$title" ]; then
-    if [ "$root" = "$GLOBAL_WIKI_ROOT" ]; then
-      title="Global Wiki (전역 공통 지식베이스)"
+    if [ "$(phys_dir "$root")" = "$(phys_dir "$GLOBAL_WIKI_ROOT")" ]; then
+      title="Global Wiki"
     else
-      local ws_dir
-      ws_dir="$(basename "$(dirname "$(dirname "$root")")")"
-      title="$ws_dir Wiki (워크스페이스 지식베이스)"
+      title="$(basename "$(dirname "$(dirname "$root")")") Wiki"
     fi
   fi
 
@@ -185,23 +185,18 @@ rebuild_index() {
     if [ ! -s "$idx_tsv" ]; then
       printf '_등록된 위키 문서가 없습니다._\n'
     else
-      # common 먼저 출력 후 나머지 스코프 알파벳순 출력
-      local scopes
-      scopes="$(awk -F'\t' 'NF>=5 { print $1 }' "$idx_tsv" | sort -u | awk '$0=="common"{print "0\t"$0; next} {print "1\t"$0}' | sort | cut -f2)"
-      for sc in $scopes; do
-        if [ "$sc" = "common" ]; then
-          printf '## 공통 (common)\n\n'
-        else
-          printf '## %s\n\n' "$sc"
-        fi
+      # 카테고리(슬러그 첫 조각) 알파벳순
+      local cats
+      cats="$(awk -F'\t' 'NF>=4 { split($1, p, "/"); print p[1] }' "$idx_tsv" | sort -u)"
+      for cat in $cats; do
+        printf '## %s\n\n' "$cat"
         printf '| 문서 | 요약 | 태그 | 갱신 |\n'
         printf '|---|---|---|---|\n'
-        awk -F'\t' -v s="$sc" '
-          $1 == s && NF >= 5 {
-            slug = $2; updated = $3; doc_title = $4; summary = $5; tags = ($6 != "" ? $6 : "-");
+        awk -F'\t' -v c="$cat" '
+          NF >= 4 && index($1, c "/") == 1 {
+            slug = $1; updated = $2; doc_title = $3; summary = $4; tags = ($5 != "" ? $5 : "-");
             gsub(/\|/, "\\|", doc_title); gsub(/\|/, "\\|", summary); gsub(/\|/, "\\|", tags);
-            path = s "/" slug ".md";
-            printf "| [%s](%s) | %s | `%s` | %s |\n", doc_title, path, summary, tags, substr(updated, 1, 10);
+            printf "| [%s](%s.md) | %s | `%s` | %s |\n", doc_title, slug, summary, tags, substr(updated, 1, 10);
           }
         ' "$idx_tsv"
         printf '\n'
@@ -214,12 +209,11 @@ append_log() {
   local root="$1"
   local ts="$2"
   local action="$3"
-  local scope="$4"
-  local slug="$5"
-  local note="$6"
+  local slug="$4"
+  local note="$5"
   ensure_wiki_root "$root"
-  printf '| %s | %s | `%s` | `%s/%s.md` | %s |\n' \
-    "$(md_cell "$ts")" "$action" "$scope" "$scope" "$slug" "$(md_cell "$note")" >> "$root/log.md"
+  printf '| %s | %s | `%s.md` | %s |\n' \
+    "$(md_cell "$ts")" "$action" "$slug" "$(md_cell "$note")" >> "$root/log.md"
 }
 
 # 기준 경로에서 상위 폴더를 따라 올라가며 docs/wiki 탐색 + 프로젝트 슬러그 판별 (읽기 전용 — 파일을 만들지 않는다)
@@ -350,16 +344,14 @@ case "$cmd" in
     ;;
 
   upsert)
-    [ $# -ge 6 ] || { echo "upsert 인자 6~7개 필요: <위키루트> <스코프> <슬러그> <갱신시각> <제목> <요약> [태그]" >&2; exit 2; }
+    { [ $# -ge 5 ] && [ $# -le 6 ]; } || { echo "upsert 인자 5~6개 필요: <위키루트> <카테고리/문서> <갱신시각> <제목> <요약> [태그]" >&2; exit 2; }
     wiki_root="$(cd "$1" && pwd)"
-    scope="$(slugify "$2")"
-    slug="$(slugify "$3")"
+    slug="$(slugify "$2")"
     slug="${slug%.md}"
-    ts="$(one_line "$4")"
-    title="$(one_line "$5")"
-    summary="$(one_line "$6")"
-    tags="$(one_line "${7:--}")"
-    check_slug "스코프" "$scope"
+    ts="$(one_line "$3")"
+    title="$(one_line "$4")"
+    summary="$(one_line "$5")"
+    tags="$(one_line "${6:--}")"
     check_slug "슬러그" "$slug"
 
     ensure_wiki_root "$wiki_root"
@@ -370,36 +362,34 @@ case "$cmd" in
     [ -f "$idx" ] && cp "$idx" "$idx.bak"
 
     action="생성"
-    if awk -F'\t' -v sc="$scope" -v sl="$slug" '$1==sc && $2==sl { found=1 } END { exit !found }' "$idx"; then
+    if awk -F'\t' -v sl="$slug" '$1==sl { found=1 } END { exit !found }' "$idx"; then
       action="갱신"
     fi
 
-    awk -F'\t' -v sc="$scope" -v sl="$slug" '!($1==sc && $2==sl)' "$idx" > "$idx.tmp" && mv "$idx.tmp" "$idx"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$scope" "$slug" "$ts" "$title" "$summary" "$tags" >> "$idx"
+    awk -F'\t' -v sl="$slug" '$1!=sl' "$idx" > "$idx.tmp" && mv "$idx.tmp" "$idx"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$slug" "$ts" "$title" "$summary" "$tags" >> "$idx"
 
     rebuild_index "$wiki_root"
-    append_log "$wiki_root" "$ts" "$action" "$scope" "$slug" "$title — $summary"
-    echo "✓ 위키 색인 $action 완료: [$scope] $slug ($wiki_root/index.md)"
+    append_log "$wiki_root" "$ts" "$action" "$slug" "$title — $summary"
+    echo "✓ 위키 색인 $action 완료: $slug ($wiki_root/index.md)"
     ;;
 
   remove)
-    [ $# -ge 3 ] || { echo "remove 인자 3~4개 필요: <위키루트> <스코프> <슬러그> [사유]" >&2; exit 2; }
+    { [ $# -ge 2 ] && [ $# -le 3 ]; } || { echo "remove 인자 2~3개 필요: <위키루트> <카테고리/문서> [사유]" >&2; exit 2; }
     wiki_root="$(cd "$1" && pwd)"
-    scope="$(slugify "$2")"
-    slug="$(slugify "$3")"
+    slug="$(slugify "$2")"
     slug="${slug%.md}"
-    reason="${4:-문서 삭제/통합}"
-    check_slug "스코프" "$scope"
+    reason="${3:-문서 삭제/통합}"
     check_slug "슬러그" "$slug"
     ts="$(date '+%Y-%m-%d %H:%M')"
 
     idx="$wiki_root/wiki.tsv"
     [ -f "$idx" ] && cp "$idx" "$idx.bak"
-    awk -F'\t' -v sc="$scope" -v sl="$slug" '!($1==sc && $2==sl)' "$idx" > "$idx.tmp" && mv "$idx.tmp" "$idx"
+    awk -F'\t' -v sl="$slug" '$1!=sl' "$idx" > "$idx.tmp" && mv "$idx.tmp" "$idx"
 
     rebuild_index "$wiki_root"
-    append_log "$wiki_root" "$ts" "삭제" "$scope" "$slug" "$reason"
-    echo "✓ 위키 색인 제거 완료: [$scope] $slug"
+    append_log "$wiki_root" "$ts" "삭제" "$slug" "$reason"
+    echo "✓ 위키 색인 제거 완료: $slug"
     ;;
 
   rebuild)
@@ -509,11 +499,11 @@ case "$cmd" in
 
     echo "=== 위키 점검 (Lint): $wiki_root ==="
     # 1. 색인에는 있으나 실제 파일이 없는 경우
-    while IFS=$'\t' read -r sc sl _ title _ _; do
-      [ -z "$sc" ] && continue
-      f="$wiki_root/$sc/$sl.md"
+    while IFS=$'\t' read -r sl _ title _ _; do
+      [ -z "$sl" ] && continue
+      f="$wiki_root/$sl.md"
       if [ ! -f "$f" ]; then
-        echo "✘ [파일 없음] 색인에 등록된 파일이 존재하지 않습니다: $sc/$sl.md ($title)"
+        echo "✘ [파일 없음] 색인에 등록된 파일이 존재하지 않습니다: $sl.md ($title)"
         issues=$((issues + 1))
       fi
     done < "$idx"
@@ -523,10 +513,8 @@ case "$cmd" in
       [ -z "$md_file" ] && continue
       rel="${md_file#"$wiki_root"/}"
       [ "$rel" = "index.md" ] || [ "$rel" = "log.md" ] && continue
-      sc="${rel%%/*}"
-      rest="${rel#*/}"
-      sl="${rest%.md}"
-      if ! awk -F'\t' -v s="$sc" -v l="$sl" '$1==s && $2==l { found=1 } END { exit !found }' "$idx"; then
+      sl="${rel%.md}"
+      if ! awk -F'\t' -v l="$sl" '$1==l { found=1 } END { exit !found }' "$idx"; then
         echo "⚠ [색인 누락] 파일은 존재하나 wiki.tsv 색인에 없습니다: $rel"
         issues=$((issues + 1))
       fi
