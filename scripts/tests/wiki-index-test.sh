@@ -37,6 +37,15 @@ git -C "$S/ws/r" add -A; git -C "$S/ws/r" -c user.name=t -c user.email=t@example
 git -C "$S/ws/r" worktree add -q "$S/ws/r/.claude/worktrees/w" -b w 2>/dev/null
 ok "T-dup 같은 레포의 같은 위키는 가장 가까운 하나만" '[ "$(wikis "$S/ws/r/.claude/worktrees/w")" = "$(printf "%s\n%s" "$S/ws/r/.claude/worktrees/w/docs/wiki" "$S/ws/docs/wiki")" ]'
 
+# 심링크로 들어온 repo도 실제 경로 위쪽의 위키를 본다
+ln -s "$S/ws/proj" "$S/lp"
+ok "T-sym 심링크 경로로 들어와도 위쪽 위키 유지(가까운 위키는 들어온 경로로 표시)" '[ "$(wikis "$S/lp/src")" = "$(printf "%s\n%s" "$S/lp/docs/wiki" "$S/ws/docs/wiki")" ]'
+# git에서 뺀(추적 안 되는) 위키는 같은 상대경로여도 다른 위키
+mkdir -p "$S/ig/docs/wiki" "$S/ig/src"; git -C "$S/ig" init -q; echo x > "$S/ig/src/a"; echo "/docs/wiki/" >> "$S/ig/.git/info/exclude"
+git -C "$S/ig" add -A; git -C "$S/ig" -c user.name=t -c user.email=t@example.invalid commit -qm i
+git -C "$S/ig" worktree add -q "$S/ig/.claude/worktrees/w2" -b w2 2>/dev/null; mkdir -p "$S/ig/.claude/worktrees/w2/docs/wiki"
+ok "T-ign 추적 안 되는 위키 둘은 둘 다 보임" '[ "$(wikis "$S/ig/.claude/worktrees/w2")" = "$(printf "%s\n%s" "$S/ig/.claude/worktrees/w2/docs/wiki" "$S/ig/docs/wiki")" ]'
+
 mkdir -p "$S/ws/docs/wiki/t"; echo "needle -x here" > "$S/ws/docs/wiki/t/a.md"
 "$W" upsert "$S/ws/docs/wiki" t/a "2026-11-05 00:00" "A | B" "s | t" "x|y" >/dev/null
 ok "T7 index.md 표의 | 이스케이프 + 범위 없는 경로" 'grep -qF "[A \| B](t/a.md) | s \| t | \`x\|y\`" "$S/ws/docs/wiki/index.md"'

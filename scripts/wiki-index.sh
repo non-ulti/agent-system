@@ -214,12 +214,14 @@ append_log() {
     "$(md_cell "$ts")" "$action" "$slug" "$(md_cell "$note")" >> "$root/log.md"
 }
 
-# 위키 중복 판별 키: git 안이면 "<공통 git 폴더>:<레포 안 상대경로>", 밖이면 실제 경로
-# 같은 레포를 다른 폴더에 펼친 worktree의 같은 위키는 키가 같다 (레포 안의 서로 다른 위키는 다르다)
+# 위키 중복 판별 키: git이 추적하는 위키면 "<공통 git 폴더>:<레포 안 상대경로>", 아니면 실제 경로
+# 같은 레포를 다른 폴더에 펼친 worktree의 같은(커밋된) 위키는 키가 같다.
+# 레포 안의 서로 다른 위키, 추적 안 되는 위키(체크아웃마다 내용이 따로 있음)는 키가 다르다.
 wiki_key() {
   local wiki_p top common
   wiki_p="$(phys_dir "$1")" || { printf '%s\n' "$1"; return 0; }
-  if top="$(git -C "$wiki_p" rev-parse --show-toplevel 2>/dev/null)" \
+  if [ -n "$(git -C "$wiki_p" ls-files -- . 2>/dev/null | head -n 1)" ] \
+     && top="$(git -C "$wiki_p" rev-parse --show-toplevel 2>/dev/null)" \
      && common="$(cd "$wiki_p" && cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)"; then
     top="$(phys_dir "$top")"
     printf '%s:%s\n' "$common" "${wiki_p#"$top"/}"
@@ -236,10 +238,17 @@ resolve_chain() {
   R_GLOBAL="$GLOBAL_WIKI_ROOT"
   R_CHAIN=()
 
-  local cands=() cur="$abs_target"
-  while [ "$cur" != "/" ] && [ "$cur" != "$HOME" ]; do
-    [ -d "$cur/docs/wiki" ] && cands+=("$cur/docs/wiki")
-    cur="$(dirname "$cur")"
+  # 들어온 경로 그대로 한 번, 심링크를 푼 실제 경로로 한 번 올라간다 (겹치는 위키는 아래에서 중복 제거)
+  local cands=() cur start abs_phys starts
+  abs_phys="$(cd "$abs_target" 2>/dev/null && pwd -P || printf '%s' "$abs_target")"
+  starts=("$abs_target")
+  [ "$abs_phys" = "$abs_target" ] || starts+=("$abs_phys")
+  for start in "${starts[@]}"; do
+    cur="$start"
+    while [ "$cur" != "/" ] && [ "$cur" != "$HOME" ]; do
+      [ -d "$cur/docs/wiki" ] && cands+=("$cur/docs/wiki")
+      cur="$(dirname "$cur")"
+    done
   done
 
   # 상위 탐색은 $HOME에서 멈추므로, git repo 바로 위가 $HOME이고 거기에 docs/wiki가 있는 경우를 따로 본다
