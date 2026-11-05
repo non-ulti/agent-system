@@ -216,89 +216,79 @@ append_log() {
     "$(md_cell "$ts")" "$action" "$slug" "$(md_cell "$note")" >> "$root/log.md"
 }
 
-# 기준 경로에서 상위 폴더를 따라 올라가며 docs/wiki 탐색 + 프로젝트 슬러그 판별 (읽기 전용 — 파일을 만들지 않는다)
-# 결과는 전역 변수 R_GLOBAL, R_WS_ROOT, R_WS_WIKI, R_PROJECT에 담는다 (eval 없이 사용 — 공백 경로 안전)
-resolve_paths() {
-  local target="${1:-.}"
-  local abs_target
+# 위키 중복 판별 키: git 안이면 "<공통 git 폴더>:<레포 안 상대경로>", 밖이면 실제 경로
+# 같은 레포를 다른 폴더에 펼친 worktree의 같은 위키는 키가 같다 (레포 안의 서로 다른 위키는 다르다)
+wiki_key() {
+  local wiki_p top common
+  wiki_p="$(phys_dir "$1")" || { printf '%s\n' "$1"; return 0; }
+  if top="$(git -C "$wiki_p" rev-parse --show-toplevel 2>/dev/null)" \
+     && common="$(cd "$wiki_p" && cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)"; then
+    top="$(phys_dir "$top")"
+    printf '%s:%s\n' "$common" "${wiki_p#"$top"/}"
+  else
+    printf '%s\n' "$wiki_p"
+  fi
+}
+
+# 위키 사슬: 기준 경로에서 위로 올라가며 만나는 docs/wiki를 가까운 순으로 모으고, link로 연결한 위키 1개를 뒤에 붙인다
+# 결과는 전역 변수 R_CHAIN(배열, 전역 위키 제외)과 R_GLOBAL에 담는다 (읽기 전용 — 파일을 만들지 않는다)
+resolve_chain() {
+  local target="${1:-.}" abs_target
   abs_target="$(cd "$target" 2>/dev/null && pwd || pwd)"
-
   R_GLOBAL="$GLOBAL_WIKI_ROOT"
-  R_WS_ROOT=""
-  R_WS_WIKI=""
-  R_PROJECT="common"
+  R_CHAIN=()
 
-  local cur="$abs_target"
+  local cands=() cur="$abs_target"
   while [ "$cur" != "/" ] && [ "$cur" != "$HOME" ]; do
-    if [ -d "$cur/docs/wiki" ]; then
-      R_WS_WIKI="$cur/docs/wiki"
-      R_WS_ROOT="$cur"
-      break
-    fi
+    [ -d "$cur/docs/wiki" ] && cands+=("$cur/docs/wiki")
     cur="$(dirname "$cur")"
   done
 
-  local git_top=""
-  git_top="$(git -C "$abs_target" rev-parse --show-toplevel 2>/dev/null || :)"
-
   # 상위 탐색은 $HOME에서 멈추므로, git repo 바로 위가 $HOME이고 거기에 docs/wiki가 있는 경우를 따로 본다
-  local via_git_parent=0
-  if [ -z "$R_WS_WIKI" ] && [ -n "$git_top" ] && [ -d "$(dirname "$git_top")/docs/wiki" ]; then
-    R_WS_ROOT="$(dirname "$git_top")"
-    R_WS_WIKI="$R_WS_ROOT/docs/wiki"
-    via_git_parent=1
+  local git_top
+  git_top="$(git -C "$abs_target" rev-parse --show-toplevel 2>/dev/null || :)"
+  if [ -n "$git_top" ] && [ "$(dirname "$git_top")" = "$HOME" ] && [ -d "$HOME/docs/wiki" ]; then
+    cands+=("$HOME/docs/wiki")
   fi
 
-  # 그래도 못 찾았으면 link로 등록한 연결을 본다 (여러 개가 겹치면 가장 긴 경로 우선)
-  # 예: 같은 저장소를 다른 폴더에 펼친 작업용 복사본(git worktree)에서 원래 폴더의 위키를 쓰는 경우
-  local via_link=0
-  if [ -z "$R_WS_WIKI" ] && [ -f "$LINKS_TSV" ]; then
-    local target_p link_line
+  # link로 등록한 연결 (여러 개가 겹치면 가장 긴 경로 우선)
+  # 예: git에서 뺀 위키가 들어오지 않는 작업용 복사본(git worktree)에서 원래 폴더의 위키를 쓰는 경우
+  if [ -f "$LINKS_TSV" ]; then
+    local target_p link_wiki
     target_p="$(cd "$abs_target" 2>/dev/null && pwd -P || printf '%s' "$abs_target")"
-    link_line="$(awk -F'\t' -v t="$target_p" '
-      NF >= 3 && (t == $1 || index(t, $1 "/") == 1) {
-        if (length($1) > best) { best = length($1); line = $0 }
+    link_wiki="$(awk -F'\t' -v t="$target_p" '
+      NF >= 2 && (t == $1 || index(t, $1 "/") == 1) {
+        if (length($1) > best) { best = length($1); w = $2 }
       }
-      END { if (line != "") print line }
+      END { if (w != "") print w }
     ' "$LINKS_TSV")"
-    if [ -n "$link_line" ]; then
-      local l_wiki l_proj
-      l_wiki="$(printf '%s\n' "$link_line" | cut -f2)"
-      l_proj="$(printf '%s\n' "$link_line" | cut -f3)"
-      if [ -d "$l_wiki" ]; then
-        R_WS_WIKI="$l_wiki"
-        R_WS_ROOT="$(dirname "$(dirname "$l_wiki")")"
-        R_PROJECT="$l_proj"
-        via_link=1
-      fi
-    fi
+    [ -n "$link_wiki" ] && [ -d "$link_wiki" ] && cands+=("$link_wiki")
   fi
 
-  # 프로젝트 슬러그 결정:
-  # 0) link로 찾았으면 등록한 프로젝트 슬러그 (위에서 설정)
-  # 1) 찾은 위키에 .project 표식이 있으면 단일 프로젝트 위키 → 표식의 슬러그
-  # 2) 워크스페이스 위키 하위 폴더에서 실행 → 워크스페이스 바로 아래 1단계 폴더명 (워크스페이스 루트 자체·docs는 common)
-  # 3) 위키를 못 찾았으면 git toplevel 이름
-  if [ "$via_link" -eq 1 ]; then
-    :
-  elif [ -n "$R_WS_WIKI" ] && [ -f "$R_WS_WIKI/.project" ]; then
-    R_PROJECT="$(slugify "$(head -n 1 "$R_WS_WIKI/.project")")"
-    [ -n "$R_PROJECT" ] || R_PROJECT="$(slugify "$(basename "$R_WS_ROOT")")"
-  elif [ "$via_git_parent" -eq 1 ]; then
-    R_PROJECT="$(slugify "$(basename "$git_top")")"
-  elif [ -n "$R_WS_WIKI" ]; then
-    if [ "$abs_target" != "$R_WS_ROOT" ]; then
-      local rel="${abs_target#"$R_WS_ROOT"/}"
-      local first_seg="${rel%%/*}"
-      case "$first_seg" in
-        ""|docs|.*) : ;;
-        *) R_PROJECT="$(slugify "$first_seg")" ;;
-      esac
-    fi
-  elif [ -n "$git_top" ]; then
-    R_PROJECT="$(slugify "$(basename "$git_top")")"
+  local keys=() c k seen dup global_key=""
+  [ -d "$GLOBAL_WIKI_ROOT" ] && global_key="$(wiki_key "$GLOBAL_WIKI_ROOT")"
+  for c in "${cands[@]+"${cands[@]}"}"; do
+    k="$(wiki_key "$c")"
+    dup=0
+    [ "$k" = "$global_key" ] && dup=1
+    for seen in "${keys[@]+"${keys[@]}"}"; do
+      [ "$seen" = "$k" ] && { dup=1; break; }
+    done
+    [ "$dup" -eq 1 ] && continue
+    keys+=("$k")
+    R_CHAIN+=("$c")
+  done
+}
+
+# 위키 하나의 문서 목록 출력
+list_wiki() {
+  local w="$1"
+  echo "=== $w ==="
+  if [ -s "$w/wiki.tsv" ]; then
+    awk -F'\t' 'NF >= 4 { printf "  %s — %s (%s) [%s]\n", $1, $3, $4, substr($2, 1, 10) }' "$w/wiki.tsv"
+  else
+    echo "(등록된 문서 없음)"
   fi
-  [ -n "$R_PROJECT" ] || R_PROJECT="common"
 }
 
 cmd="${1:-}"
@@ -306,11 +296,11 @@ cmd="${1:-}"
 
 case "$cmd" in
   resolve)
-    resolve_paths "${1:-.}"
+    resolve_chain "${1:-.}"
+    for w in "${R_CHAIN[@]+"${R_CHAIN[@]}"}"; do
+      printf 'WIKI=%s\n' "$w"
+    done
     printf 'GLOBAL_WIKI=%s\n' "$R_GLOBAL"
-    printf 'WS_ROOT=%s\n' "${R_WS_ROOT:--}"
-    printf 'WS_WIKI=%s\n' "${R_WS_WIKI:--}"
-    printf 'PROJECT=%s\n' "$R_PROJECT"
     ;;
 
   init-ws)
@@ -400,42 +390,26 @@ case "$cmd" in
     ;;
 
   list)
-    resolve_paths "${1:-.}"
-    echo "=== [1] 워크스페이스 위키 (${R_WS_WIKI:--}) · 현재 프로젝트: ${R_PROJECT} ==="
-    if [ -n "$R_WS_WIKI" ] && [ -s "$R_WS_WIKI/wiki.tsv" ]; then
-      awk -F'\t' -v p="$R_PROJECT" '
-        $1 == p || $1 == "common" {
-          mark = ($1 == p ? "★" : " ");
-          printf "%s [%s] %s — %s (%s) [%s]\n", mark, $1, $2, $4, $5, substr($3,1,10);
-        }
-      ' "$R_WS_WIKI/wiki.tsv"
-    else
-      echo "(등록된 문서 없음)"
-    fi
-    echo ""
-    echo "=== [2] 전역 공통 위키 (${R_GLOBAL}) ==="
-    if [ -s "$R_GLOBAL/wiki.tsv" ]; then
-      awk -F'\t' '{ printf "  [%s] %s — %s (%s) [%s]\n", $1, $2, $4, $5, substr($3,1,10) }' "$R_GLOBAL/wiki.tsv"
-    else
-      echo "(등록된 문서 없음)"
-    fi
+    resolve_chain "${1:-.}"
+    for w in "${R_CHAIN[@]+"${R_CHAIN[@]}"}"; do
+      list_wiki "$w"
+      echo ""
+    done
+    list_wiki "$R_GLOBAL"
     ;;
 
   search)
     [ $# -ge 1 ] || { echo "search 인자 필요: <키워드> [기준경로=.]" >&2; exit 2; }
     kw="$1"
-    resolve_paths "${2:-.}"
-    roots=("$R_GLOBAL")
-    if [ -n "$R_WS_WIKI" ] && [ "$R_WS_WIKI" != "$R_GLOBAL" ]; then
-      roots=("$R_WS_WIKI" "$R_GLOBAL")
-    fi
-    # roots.tsv에 등록된 다른 워크스페이스도 포함
+    resolve_chain "${2:-.}"
+    roots=("${R_CHAIN[@]+"${R_CHAIN[@]}"}" "$R_GLOBAL")
+    # roots.tsv에 등록된 다른 위키도 포함
     if [ -f "$ROOTS_TSV" ]; then
       while IFS=$'\t' read -r r_path _ _; do
         [ -d "$r_path" ] || continue
         skip=0
         for existing in "${roots[@]}"; do
-          [ "$existing" = "$r_path" ] && skip=1 && break
+          [ "$(phys_dir "$existing")" = "$(phys_dir "$r_path")" ] && skip=1 && break
         done
         [ "$skip" -eq 0 ] && roots+=("$r_path")
       done < "$ROOTS_TSV"
@@ -449,19 +423,17 @@ case "$cmd" in
     ;;
 
   link)
-    [ $# -eq 3 ] || die "사용법: wiki-index.sh link <경로> <위키루트> <프로젝트슬러그>"
+    [ $# -eq 2 ] || die "사용법: wiki-index.sh link <경로> <위키루트>"
     [ -d "$1" ] || die "경로가 없습니다: $1"
-    [ -f "$2/wiki.tsv" ] || die "위키 루트가 아닙니다(wiki.tsv 없음): $2 — init-ws 또는 init-project로 먼저 만드세요"
+    [ -f "$2/wiki.tsv" ] || die "위키 루트가 아닙니다(wiki.tsv 없음): $2 — init으로 먼저 만드세요"
     link_path="$(phys_dir "$1")"
     link_wiki="$(phys_dir "$2")"
-    link_proj="$(slugify "$3")"
-    check_slug "스코프" "$link_proj"
     mkdir -p "$GLOBAL_WIKI_ROOT"
     touch "$LINKS_TSV"
     awk -F'\t' -v p="$link_path" '$1 != p' "$LINKS_TSV" > "$LINKS_TSV.tmp" && mv "$LINKS_TSV.tmp" "$LINKS_TSV"
-    printf '%s\t%s\t%s\n' "$link_path" "$link_wiki" "$link_proj" >> "$LINKS_TSV"
-    echo "✓ 연결 등록: $link_path 아래 → $link_wiki (프로젝트: $link_proj)"
-    echo "  (그 경로 위쪽에 docs/wiki가 있으면 그쪽이 먼저 쓰입니다)"
+    printf '%s\t%s\n' "$link_path" "$link_wiki" >> "$LINKS_TSV"
+    echo "✓ 연결 등록: $link_path 아래 → $link_wiki"
+    echo "  (그 경로 위쪽에서 찾은 docs/wiki 다음 순서로 조회됩니다)"
     ;;
 
   unlink)
@@ -478,12 +450,12 @@ case "$cmd" in
 
   links)
     if [ -s "$LINKS_TSV" ]; then
-      while IFS=$'\t' read -r l_path l_wiki l_proj; do
+      while IFS=$'\t' read -r l_path l_wiki _; do
         [ -n "$l_path" ] || continue
         mark=""
         [ -d "$l_wiki" ] || mark=" ⚠ 위키 폴더 없음"
         [ -d "$l_path" ] || mark="$mark ⚠ 경로 없음"
-        echo "$l_path → $l_wiki (프로젝트: $l_proj)$mark"
+        echo "$l_path → $l_wiki$mark"
       done < "$LINKS_TSV"
     else
       echo "(등록된 연결 없음)"
