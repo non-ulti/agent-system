@@ -6,7 +6,7 @@ W="$(cd "$(dirname "$0")/.." && pwd)/wiki-index.sh"
 S="${1:-$(mktemp -d)}"
 rm -rf "$S"; mkdir -p "$S"
 S="$(cd "$S" && pwd -P)"
-export AGENT_SYSTEM_HOME="$S/ash"; mkdir -p "$AGENT_SYSTEM_HOME/wiki/common"
+export AGENT_SYSTEM_HOME="$S/ash"; mkdir -p "$AGENT_SYSTEM_HOME/wiki"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 pass=0; fail=0
 ok(){ if eval "$2"; then echo "PASS $1"; pass=$((pass+1)); else echo "FAIL $1"; fail=$((fail+1)); fi; }
@@ -47,40 +47,44 @@ ok "T10 .gitignore로 .bak 제외" '[ -z "$(git -C "$S/ws" status --porcelain --
 ok "T11 '-'로 시작하는 검색어를 패턴으로 처리" '(cd "$S/bare" && "$W" search "-x" "$S/ws/proj") | grep -q "needle -x here"'
 ok "T12 슬러그 경로 탈출(..) 거부" '! "$W" upsert "$S/ws/docs/wiki" "../../evil" t E s 2>/dev/null && ! grep -q evil "$S/ws/docs/wiki/wiki.tsv"'
 ok "T13 옛 형식 호출(범위 인자) 거부" 'cp "$S/ws/docs/wiki/wiki.tsv" "$S/t13"; ! "$W" upsert "$S/ws/docs/wiki" common infra/x t E s G 2>/dev/null && cmp -s "$S/t13" "$S/ws/docs/wiki/wiki.tsv"'
-ok "T14 기존 워크스페이스 위키에 init-project 거부" '! "$W" init-project "$S/ws" 2>/dev/null && [ ! -f "$S/ws/docs/wiki/.project" ]'
 ok "T15 전역 위키 upsert는 roots.tsv에 등록 안 함" 'mkdir -p "$AGENT_SYSTEM_HOME/wiki/g"; echo g > "$AGENT_SYSTEM_HOME/wiki/g/x.md"; "$W" upsert "$AGENT_SYSTEM_HOME/wiki" g/x t G s >/dev/null && ! grep -q "^$AGENT_SYSTEM_HOME/wiki	" "$AGENT_SYSTEM_HOME/wiki/roots.tsv"'
 ok "T16 lint 정상" '"$W" lint "$S/ws/docs/wiki" | grep -q "이상 없음"'
-ok "T17 인자 없이 실행 시 사용법 출력" '"$W" 2>&1 | grep -q init-project'
+ok "T17 사용법에 init" '"$W" 2>&1 | grep -q "init <경로>"'
+
+mkdir -p "$S/ni"
+ok "T-init common/·.project를 만들지 않음" '"$W" init "$S/ni" >/dev/null && [ -f "$S/ni/docs/wiki/wiki.tsv" ] && [ ! -e "$S/ni/docs/wiki/common" ] && [ ! -e "$S/ni/docs/wiki/.project" ]'
+ok "T-old init-ws는 없는 명령" '! "$W" init-ws "$S/ni" >/dev/null 2>&1'
+ok "T-old2 init-project는 없는 명령" '! "$W" init-project "$S/ni" >/dev/null 2>&1'
 
 # --ignore
-ok "T18 옵션 생략 시 무시 설정 안 함" '"$W" init-ws "$S/ws" >/dev/null && ! grep -q docs/wiki "$S/ws/.git/info/exclude" 2>/dev/null && [ ! -f "$S/ws/.gitignore" ]'
-"$W" init-ws "$S/ws" --ignore local >/dev/null
+ok "T18 옵션 생략 시 무시 설정 안 함" '"$W" init "$S/ws" >/dev/null && ! grep -q docs/wiki "$S/ws/.git/info/exclude" 2>/dev/null && [ ! -f "$S/ws/.gitignore" ]'
+"$W" init "$S/ws" --ignore local >/dev/null
 ok "T19 --ignore local: exclude에 추가, repo 파일 변경 없음, git status 깨끗" 'grep -qxF "/docs/wiki/" "$S/ws/.git/info/exclude" && [ ! -f "$S/ws/.gitignore" ] && [ -z "$(git -C "$S/ws" status --porcelain -- docs)" ]'
-"$W" init-ws "$S/ws" --ignore=local >/dev/null
+"$W" init "$S/ws" --ignore=local >/dev/null
 ok "T20 다시 실행해도 중복 추가 안 함" '[ "$(grep -cxF "/docs/wiki/" "$S/ws/.git/info/exclude")" = 1 ]'
 ok "T21 기존 위키 내용 유지" 'grep -q "t/a" "$S/ws/docs/wiki/wiki.tsv"'
 
 mkdir -p "$S/sh"; git -C "$S/sh" init -q; printf 'node_modules/' > "$S/sh/.gitignore"
-"$W" init-project "$S/sh" --ignore shared >/dev/null
+"$W" init "$S/sh" --ignore shared >/dev/null
 ok "T22 --ignore shared: .gitignore에 추가(마지막 줄바꿈 없던 파일도 줄 분리)" 'grep -qxF "node_modules/" "$S/sh/.gitignore" && grep -qxF "/docs/wiki/" "$S/sh/.gitignore" && git -C "$S/sh" check-ignore -q docs/wiki/index.md'
-ok "T23 init-project 재실행 + shared 중복 없음" '"$W" init-project "$S/sh" --ignore shared >/dev/null && [ "$(grep -cxF "/docs/wiki/" "$S/sh/.gitignore")" = 1 ]'
+ok "T23 init 재실행 + shared 중복 없음" '"$W" init "$S/sh" --ignore shared >/dev/null && [ "$(grep -cxF "/docs/wiki/" "$S/sh/.gitignore")" = 1 ]'
 
 mkdir -p "$S/mono/team/a"; git -C "$S/mono" init -q
-"$W" init-ws "$S/mono/team" --ignore local >/dev/null
+"$W" init "$S/mono/team" --ignore local >/dev/null
 ok "T24 repo 하위 폴더 워크스페이스: 경로 기준으로 무시" 'grep -qxF "/team/docs/wiki/" "$S/mono/.git/info/exclude" && git -C "$S/mono" check-ignore -q team/docs/wiki/index.md'
 
 mkdir -p "$S/nogit"
-ok "T25 git repo 밖이면 건너뜀(실패 아님)" '"$W" init-ws "$S/nogit" --ignore local | grep -q "건너뜁니다"'
-ok "T26 잘못된 --ignore 값 거부" '! "$W" init-ws "$S/nogit" --ignore everyone 2>/dev/null'
-ok "T27 알 수 없는 옵션 거부" '! "$W" init-ws "$S/nogit" --force 2>/dev/null'
+ok "T25 git repo 밖이면 건너뜀(실패 아님)" '"$W" init "$S/nogit" --ignore local | grep -q "건너뜁니다"'
+ok "T26 잘못된 --ignore 값 거부" '! "$W" init "$S/nogit" --ignore everyone 2>/dev/null'
+ok "T27 알 수 없는 옵션 거부" '! "$W" init "$S/nogit" --force 2>/dev/null'
 
 mkdir -p "$S/tr/docs/wiki"; git -C "$S/tr" init -q; echo x > "$S/tr/docs/wiki/old.md"
 git -C "$S/tr" add docs >/dev/null; git -C "$S/tr" -c user.name=t -c user.email=t@example.invalid commit -qm init
-ok "T28 이미 추적 중인 위키면 경고" '"$W" init-ws "$S/tr" --ignore local 2>&1 >/dev/null | grep -q "rm -r --cached"'
+ok "T28 이미 추적 중인 위키면 경고" '"$W" init "$S/tr" --ignore local 2>&1 >/dev/null | grep -q "rm -r --cached"'
 
 # link (위키가 없는 위치를 기존 위키·프로젝트에 연결)
 mkdir -p "$S/hub/docs/wiki" "$S/hub2/docs/wiki" "$S/wt/apps/web" "$S/wt/inner/x" "$S/wtab" "$S/Spaced WT/a"
-"$W" init-ws "$S/hub" >/dev/null; "$W" init-ws "$S/hub2" >/dev/null
+"$W" init "$S/hub" >/dev/null; "$W" init "$S/hub2" >/dev/null
 before_link="$(snap)"
 ok "T29 link 등록 전에는 위키 없음" '[ -z "$(wikis "$S/wt/apps/web")" ]'
 "$W" link "$S/wt" "$S/hub/docs/wiki" >/dev/null

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# 계층형 LLM Wiki(프로젝트 · 워크스페이스 공통 · 전역 공통) 경로 탐색 및 색인(wiki.tsv / index.md / log.md) 관리
+# 위치 기반 LLM Wiki 경로 탐색 및 색인(wiki.tsv / index.md / log.md) 관리
+# 위키 하나 = 적용 범위 하나: <폴더>/docs/wiki는 그 폴더 아래 전체, ~/.agent-system/wiki는 어디서나. 위키 바로 아래는 카테고리 폴더.
 # 사용:
-#   wiki-index.sh resolve [기준경로=.]                                    # 현재 위치 기준 3계층 위키 경로와 프로젝트 슬러그 출력 (읽기 전용)
-#   wiki-index.sh init-ws <워크스페이스경로> [제목] [--ignore local|shared]          # 여러 프로젝트를 묶는 <워크스페이스경로>/docs/wiki 초기화 및 등록
-#   wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그] [--ignore local|shared] # 단일 프로젝트 전용 <프로젝트경로>/docs/wiki 초기화 (.project 표식)
+#   wiki-index.sh resolve [기준경로=.]                                  # 위로 올라가며 만나는 위키(WIKI=, 가까운 순)와 전역 위키(GLOBAL_WIKI=) 출력 (읽기 전용)
+#   wiki-index.sh init <경로> [제목] [--ignore local|shared]            # <경로>/docs/wiki 초기화 및 등록
 #     --ignore local  : .git/info/exclude에 위키 폴더 추가 (이 기기에서만 무시, repo 파일 변경 없음)
 #     --ignore shared : repo 루트 .gitignore에 위키 폴더 추가 (팀 전체 무시, 커밋 필요)
 #     생략            : 무시 설정 안 함 (위키를 repo에 커밋하는 경우). 이미 만든 위키에 다시 실행하면 무시 설정만 추가된다
-#   wiki-index.sh upsert <위키루트> <스코프> <슬러그> <시각> <제목> <요약> [태그]  # 색인 갱신 + index.md 재빌드 + log.md 기록
-#   wiki-index.sh remove <위키루트> <스코프> <슬러그> [사유]              # 색인에서 제거 + index.md 재빌드 + log.md 기록
-#   wiki-index.sh rebuild <위키루트>                                      # wiki.tsv 기준으로 index.md 재생성
-#   wiki-index.sh list [기준경로=.]                                       # 현재 위치에서 참조 가능한 모든 계층 위키 목록 출력
-#   wiki-index.sh search <키워드> [기준경로=.]                            # 참조 가능한 위키들의 색인·본문에서 키워드 검색
-#   wiki-index.sh lint <위키루트>                                         # 색인 누락(고아 파일)·파일 실종 점검
-#   wiki-index.sh link <경로> <위키루트> <프로젝트슬러그>                 # <경로> 아래에서 docs/wiki를 못 찾으면 이 위키·프로젝트를 쓰도록 연결 등록
-#   wiki-index.sh unlink <경로>                                           # 연결 해제
-#   wiki-index.sh links                                                   # 등록된 연결 목록
+#   wiki-index.sh upsert <위키루트> <카테고리/문서> <시각> <제목> <요약> [태그]  # 색인 갱신 + index.md 재빌드 + log.md 기록
+#   wiki-index.sh remove <위키루트> <카테고리/문서> [사유]               # 색인에서 제거 + index.md 재빌드 + log.md 기록
+#   wiki-index.sh rebuild <위키루트> [제목]                              # wiki.tsv 기준으로 index.md 재생성
+#   wiki-index.sh list [기준경로=.]                                     # 현재 위치에서 조회되는 위키들과 전역 위키의 문서 목록
+#   wiki-index.sh search <키워드> [기준경로=.]                          # 조회되는 위키들(+등록된 다른 위키)의 본문에서 키워드 검색
+#   wiki-index.sh lint <위키루트>                                       # 색인 누락(고아 파일)·파일 실종 점검
+#   wiki-index.sh link <경로> <위키루트>                                # <경로> 아래에서 이 위키도 조회하도록 연결 등록 (git에서 뺀 위키를 worktree에서 쓸 때)
+#   wiki-index.sh unlink <경로>                                         # 연결 해제
+#   wiki-index.sh links                                                 # 등록된 연결 목록
 set -euo pipefail
 
 if [ -z "${AGENT_SYSTEM_HOME:-}" ]; then
@@ -29,7 +29,7 @@ fi
 
 GLOBAL_WIKI_ROOT="$AS_HOME/wiki"
 ROOTS_TSV="$GLOBAL_WIKI_ROOT/roots.tsv"
-# 연결 등록부 (컬럼: 경로 \t 위키루트 \t 프로젝트슬러그, 경로는 실제 경로 pwd -P 기준)
+# 연결 등록부 (컬럼: 경로 \t 위키루트, 경로는 실제 경로 pwd -P 기준)
 LINKS_TSV="$GLOBAL_WIKI_ROOT/links.tsv"
 
 one_line() {
@@ -42,18 +42,17 @@ slugify() {
 
 die() { echo "$*" >&2; exit 2; }
 
-# 스코프·슬러그 검증: 빈 값, 절대경로, '.'/'..' 경로 조각 금지 (스코프는 '/' 금지, 슬러그는 <카테고리>/<문서>로 '/' 필수)
+# 슬러그 검증: <카테고리>/<문서> 형식('/' 필수), 빈 값·절대경로·'.'/'..'·빈 경로 조각 금지
 check_slug() {
-  local kind="$1" value="$2"
-  [ -n "$value" ] || die "$kind 값이 비어 있습니다"
+  local value="$1"
+  [ -n "$value" ] || die "슬러그 값이 비어 있습니다"
   case "/$value/" in
-    *//*|*/./*|*/../*) die "$kind에 빈 경로 조각이나 '.', '..'를 쓸 수 없습니다: $value" ;;
+    *//*|*/./*|*/../*) die "슬러그에 빈 경로 조각이나 '.', '..'를 쓸 수 없습니다: $value" ;;
   esac
-  if [ "$kind" = "스코프" ]; then
-    case "$value" in */*) die "스코프에는 '/'를 쓸 수 없습니다: $value" ;; esac
-  else
-    case "$value" in */*) ;; *) die "슬러그는 <카테고리>/<문서> 형식이어야 합니다: $value" ;; esac
-  fi
+  case "$value" in
+    */*) ;;
+    *) die "슬러그는 <카테고리>/<문서> 형식이어야 합니다: $value" ;;
+  esac
 }
 
 # 마크다운 표 칸 안의 '|' 이스케이프
@@ -65,7 +64,7 @@ phys_dir() {
   (cd "$1" 2>/dev/null && pwd -P)
 }
 
-# init-ws/init-project 인자 분리: --ignore 값은 IGNORE_MODE, 나머지 위치 인자는 INIT_POS 배열
+# init 인자 분리: --ignore 값은 IGNORE_MODE, 나머지 위치 인자는 INIT_POS 배열
 parse_init_args() {
   IGNORE_MODE=""
   INIT_POS=()
@@ -134,8 +133,7 @@ apply_ignore() {
 ensure_wiki_root() {
   local root="$1"
   local title="${2:-Wiki}"
-  [ -d "$root" ] || mkdir -p "$root/common" 2>/dev/null || return 0
-  mkdir -p "$root/common" 2>/dev/null || :
+  mkdir -p "$root" 2>/dev/null || return 0
   [ -f "$root/wiki.tsv" ] || : > "$root/wiki.tsv" 2>/dev/null || :
   [ -f "$root/.gitignore" ] || printf '# wiki-index.sh 임시·백업 파일\n*.bak\n*.tmp\n' > "$root/.gitignore" 2>/dev/null || :
   if [ ! -f "$root/log.md" ]; then
@@ -303,33 +301,15 @@ case "$cmd" in
     printf 'GLOBAL_WIKI=%s\n' "$R_GLOBAL"
     ;;
 
-  init-ws)
+  init)
     parse_init_args "$@"
-    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init-ws <워크스페이스경로> [제목] [--ignore local|shared]"
-    ws_dir="$(cd "${INIT_POS[0]}" && pwd)"
-    ws_name="${INIT_POS[1]:-$(basename "$ws_dir") Wiki}"
-    wiki_root="$ws_dir/docs/wiki"
-    ensure_wiki_root "$wiki_root" "$ws_name"
-    register_ws_root "$wiki_root" "$(basename "$ws_dir")"
-    echo "✓ 워크스페이스 위키 초기화 완료: $wiki_root"
-    apply_ignore "$wiki_root" "$IGNORE_MODE"
-    ;;
-
-  init-project)
-    parse_init_args "$@"
-    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init-project <프로젝트경로> [프로젝트슬러그] [--ignore local|shared]"
-    proj_dir="$(cd "${INIT_POS[0]}" && pwd)"
-    proj_slug="$(slugify "${INIT_POS[1]:-$(basename "$proj_dir")}")"
-    check_slug "스코프" "$proj_slug"
-    [ "$proj_slug" != "common" ] || die "프로젝트 슬러그로 common은 쓸 수 없습니다"
-    wiki_root="$proj_dir/docs/wiki"
-    if [ -s "$wiki_root/wiki.tsv" ] && [ ! -f "$wiki_root/.project" ]; then
-      die "이미 워크스페이스 위키로 쓰이는 폴더입니다(.project 표식 없음): $wiki_root"
-    fi
-    ensure_wiki_root "$wiki_root" "$(basename "$proj_dir") Wiki"
-    printf '%s\n' "$proj_slug" > "$wiki_root/.project"
-    register_ws_root "$wiki_root" "$(basename "$proj_dir")"
-    echo "✓ 단일 프로젝트 위키 초기화 완료: $wiki_root (프로젝트 스코프: $proj_slug)"
+    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init <경로> [제목] [--ignore local|shared]"
+    base_dir="$(cd "${INIT_POS[0]}" && pwd)"
+    wiki_title="${INIT_POS[1]:-$(basename "$base_dir") Wiki}"
+    wiki_root="$base_dir/docs/wiki"
+    ensure_wiki_root "$wiki_root" "$wiki_title"
+    register_ws_root "$wiki_root" "$(basename "$base_dir")"
+    echo "✓ 위키 초기화 완료: $wiki_root"
     apply_ignore "$wiki_root" "$IGNORE_MODE"
     ;;
 
@@ -342,7 +322,7 @@ case "$cmd" in
     title="$(one_line "$4")"
     summary="$(one_line "$5")"
     tags="$(one_line "${6:--}")"
-    check_slug "슬러그" "$slug"
+    check_slug "$slug"
 
     ensure_wiki_root "$wiki_root"
     if [ "$(phys_dir "$wiki_root")" != "$(phys_dir "$GLOBAL_WIKI_ROOT")" ]; then
@@ -370,7 +350,7 @@ case "$cmd" in
     slug="$(slugify "$2")"
     slug="${slug%.md}"
     reason="${3:-문서 삭제/통합}"
-    check_slug "슬러그" "$slug"
+    check_slug "$slug"
     ts="$(date '+%Y-%m-%d %H:%M')"
 
     idx="$wiki_root/wiki.tsv"
