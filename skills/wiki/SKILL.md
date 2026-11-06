@@ -32,7 +32,9 @@ description: Use when the user wants to query, record, update, or lint the locat
 조회할 때는 현재 위치에서 위로 올라가며 만나는 `docs/wiki`를 가까운 순으로 모두 보고(위키 사슬), 마지막에 전역 위키를 본다. 같은 repo를 다른 폴더에 펼친 worktree에서는 같은 위키가 두 번 잡히지 않도록 가장 가까운 하나만 쓴다.
 
 - **repo 위키를 git에 커밋하면** 그 repo의 worktree(Orca·Claude Code 작업 폴더 등)에서도 그대로 보인다.
-- 위키는 기본으로 git에서 빠지므로(`init` 기본 = local 무시) Orca·git worktree에서는 `link`로 연결해야 조회된다. `--ignore none`으로 커밋한 위키만 worktree에 같이 들어온다. repo 안에 있지만 무시되는 상위 폴더 위키도 마찬가지다.
+- repo 안에 만든 worktree(예: `<repo>/.claude/worktrees/<이름>`)는 위로 올라가다 원래 repo의 위키를 만나므로 따로 연결할 필요가 없다.
+- 위키 폴더 **바깥**에 만든 worktree·작업 폴더(예: Orca가 다른 위치에 만든 worktree)는 위로 올라가도 위키를 만나지 않는다. 위키는 기본으로 git에서 빠지므로(`init` 기본 = local 무시) 이런 곳에서는 `link`로 연결해야 조회된다. `--ignore none`으로 커밋한 위키는 worktree에 같이 들어와 연결 없이 보이지만, 그 위쪽 상위 폴더 위키는 여전히 바깥에 있다.
+- `link`로 연결하면 연결한 위키뿐 아니라 그 위키가 놓인 폴더의 위쪽 위키들(예: repo 위키를 연결하면 그 repo를 담은 상위 폴더의 위키)도 함께 조회된다.
 
 ---
 
@@ -50,7 +52,7 @@ WIKI_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/wiki-index.sh}"
 출력은 `WIKI=<경로>` 줄 0개 이상(가까운 순)과 `GLOBAL_WIKI=<경로>` 한 줄이다. `resolve`·`list`·`search`·`lint`·`links`는 읽기 전용이라 어떤 파일도 만들지 않는다 — 위키 파일은 `init`·`upsert`·`remove`·`rebuild`에서만 생긴다.
 
 - `WIKI=` 줄이 없으면 현재 위치 위쪽에 `docs/wiki`가 없고 `link`로 연결된 위키도 없는 상태다. 기존 위키에 연결하거나 새로 만드는 절차는 [references/ingest.md](references/ingest.md)의 0단계에 있다.
-- `link`로 등록한 연결은 위쪽에서 찾은 위키들 다음 순서로 붙는다(`"$WIKI_SH" links`로 목록 확인).
+- `link`로 등록한 연결은 위쪽에서 찾은 위키들 다음에 연결한 위키, 그다음 그 위키 폴더 위쪽의 위키들 순서로 붙는다(`"$WIKI_SH" links`로 목록 확인, 형식이 잘못된 줄은 `형식 오류`로 표시되고 쓰이지 않는다).
 
 ---
 

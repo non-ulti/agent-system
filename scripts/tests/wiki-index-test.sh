@@ -128,5 +128,51 @@ mv "$S/hub2/docs/wiki" "$S/hub2/docs/wiki-moved"
 ok "T44 연결된 위키 폴더가 사라지면 무시하고 links에 표시" '[ -z "$(wikis "$S/wt/inner/x")" ] && "$W" links | grep -q "위키 폴더 없음"'
 mv "$S/hub2/docs/wiki-moved" "$S/hub2/docs/wiki"
 
+# 컨테이너 바깥 worktree를 link로 연결하면 연결된 위키 위쪽(컨테이너) 위키도 본다
+mkdir -p "$S/ctr/docs/wiki" "$S/ctr/repo/docs/wiki" "$S/orca/repo/feat/src"
+"$W" init "$S/ctr" >/dev/null; "$W" init "$S/ctr/repo" >/dev/null
+"$W" link "$S/orca/repo" "$S/ctr/repo/docs/wiki" >/dev/null
+ok "T45 link: 바깥 worktree에서 연결 위키 다음에 그 위쪽 위키(정확한 순서)" '[ "$(wikis "$S/orca/repo/feat/src")" = "$(printf "%s\n%s" "$S/ctr/repo/docs/wiki" "$S/ctr/docs/wiki")" ]'
+mkdir -p "$S/orca/docs/wiki"
+ok "T46 link: 현재 위치 위쪽 위키 → 연결 위키 → 그 위쪽 위키 순" '[ "$(wikis "$S/orca/repo/feat/src")" = "$(printf "%s\n%s\n%s" "$S/orca/docs/wiki" "$S/ctr/repo/docs/wiki" "$S/ctr/docs/wiki")" ]'
+rm -rf "$S/orca/docs"
+
+# 옛 형식(0.4.x, 6칸) wiki.tsv는 건드리지 않고 거부
+mkdir -p "$S/ow/docs/wiki"; "$W" init "$S/ow" >/dev/null
+printf 'common\tinfra/db\t2026-01-01\tDB\ts\tdb\n' > "$S/ow/docs/wiki/wiki.tsv"
+cp "$S/ow/docs/wiki/wiki.tsv" "$S/ow-tsv"; cp "$S/ow/docs/wiki/index.md" "$S/ow-idx"; cp "$S/ow/docs/wiki/log.md" "$S/ow-log"
+ow_same(){ cmp -s "$S/ow-tsv" "$S/ow/docs/wiki/wiki.tsv" && cmp -s "$S/ow-idx" "$S/ow/docs/wiki/index.md" && cmp -s "$S/ow-log" "$S/ow/docs/wiki/log.md"; }
+ok "T47 옛 형식 wiki.tsv에 upsert 거부, 파일 변경 없음" '! "$W" upsert "$S/ow/docs/wiki" infra/new t N s 2>/dev/null && ow_same'
+ok "T48 옛 형식 wiki.tsv에 remove·rebuild 거부, 파일 변경 없음" '! "$W" remove "$S/ow/docs/wiki" infra/db 2>/dev/null && ! "$W" rebuild "$S/ow/docs/wiki" 2>/dev/null && ow_same'
+ok "T49 옛 형식 거부 메시지는 이전(마이그레이션) 안내" '"$W" upsert "$S/ow/docs/wiki" infra/new t N s 2>&1 | grep -q "0.4"'
+printf 'scope\t2026-01-01\tT\ts\tt\n' > "$S/ow/docs/wiki/wiki.tsv"
+ok "T50 첫 칸에 /가 없는 줄도 옛 형식으로 거부" '! "$W" upsert "$S/ow/docs/wiki" infra/new t N s 2>/dev/null && [ "$(wc -l < "$S/ow/docs/wiki/wiki.tsv")" -eq 1 ]'
+
+# 이미 커밋한 위키에 init 재실행
+mkdir -p "$S/cm"; git -C "$S/cm" init -q; "$W" init "$S/cm" --ignore none >/dev/null
+git -C "$S/cm" add docs >/dev/null; git -C "$S/cm" -c user.name=t -c user.email=t@example.invalid commit -qm w
+cp "$S/cm/.git/info/exclude" "$S/cm-ex"
+cm_out="$("$W" init "$S/cm" 2>&1)"; mkdir -p "$S/cm/docs/wiki/t"; echo n > "$S/cm/docs/wiki/t/new.md"
+ok "T51 커밋된 위키 + 옵션 없는 init → 무시 추가 안 함, 새 문서가 git에 보임" 'cmp -s "$S/cm-ex" "$S/cm/.git/info/exclude" && git -C "$S/cm" status --porcelain -- docs | grep -q "docs/wiki/t/"'
+ok "T52 커밋된 위키 + 옵션 없는 init → 건너뜀 안내" 'printf "%s" "$cm_out" | grep -q -- "--ignore local"'
+mkdir -p "$S/cm2"; git -C "$S/cm2" init -q; "$W" init "$S/cm2" --ignore none >/dev/null
+git -C "$S/cm2" add docs >/dev/null; git -C "$S/cm2" -c user.name=t -c user.email=t@example.invalid commit -qm w
+cm2_err="$("$W" init "$S/cm2" --ignore local 2>&1 >/dev/null)"
+ok "T53 커밋된 위키 + --ignore local → 추가하고 새 파일만 무시된다고 경고" 'grep -qxF "/docs/wiki/" "$S/cm2/.git/info/exclude" && printf "%s" "$cm2_err" | grep -q "새로 만드는" && printf "%s" "$cm2_err" | grep -q "rm -r --cached"'
+
+# 빈 위키 루트 인자는 현재 폴더에 위키를 만들지 않음
+mkdir -p "$S/emp"
+ok "T54 빈 위키 루트 upsert/remove/rebuild/lint 거부, 현재 폴더에 아무것도 안 만듦" '(cd "$S/emp" && ! "$W" upsert "" t/a t T s 2>/dev/null && ! "$W" remove "" t/a 2>/dev/null && ! "$W" rebuild "" 2>/dev/null && ! "$W" lint "" >/dev/null 2>&1) && [ -z "$(ls -A "$S/emp")" ]'
+
+# init 위치 인자 3개 이상 거부
+mkdir -p "$S/x3"
+ok "T55 init 위치 인자 초과 거부, 위키 안 만듦" '! "$W" init "$S/x3" "T" extra 2>/dev/null && [ ! -e "$S/x3/docs" ]'
+
+# links.tsv에서 칸 수가 2가 아닌 줄은 쓰지 않고 links에 표시
+mkdir -p "$S/old3/a"
+printf '%s\t%s\tx\n' "$S/old3" "$S/hub/docs/wiki" >> "$AGENT_SYSTEM_HOME/wiki/links.tsv"
+ok "T56 3칸 links.tsv 줄은 resolve에서 쓰지 않음" '[ -z "$(wikis "$S/old3/a")" ]'
+ok "T57 3칸 links.tsv 줄은 links에 형식 오류로 표시" '"$W" links | grep -F "$S/old3" | grep -q "형식 오류"'
+
 echo "결과: PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

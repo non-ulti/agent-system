@@ -8,13 +8,14 @@
 #     --ignore shared : repo 루트 .gitignore에 위키 폴더 추가 (팀 전체 무시, 커밋 필요)
 #     none            : 무시 설정 안 함 (위키를 repo에 커밋하는 경우)
 #     생략            : local과 같음 (기본). 이미 만든 위키에 다시 실행하면 무시 설정만 추가된다
+#                       (단 위키 파일이 이미 git에 커밋돼 있으면 생략 시에는 무시를 추가하지 않는다)
 #   wiki-index.sh upsert <위키루트> <카테고리/문서> <시각> <제목> <요약> [태그]  # 색인 갱신 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh remove <위키루트> <카테고리/문서> [사유]               # 색인에서 제거 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh rebuild <위키루트> [제목]                              # wiki.tsv 기준으로 index.md 재생성
 #   wiki-index.sh list [기준경로=.]                                     # 현재 위치에서 조회되는 위키들과 전역 위키의 문서 목록
 #   wiki-index.sh search <키워드> [기준경로=.]                          # 조회되는 위키들(+등록된 다른 위키)의 본문에서 키워드 검색
 #   wiki-index.sh lint <위키루트>                                       # 색인 누락(고아 파일)·파일 실종 점검
-#   wiki-index.sh link <경로> <위키루트>                                # <경로> 아래에서 이 위키도 조회하도록 연결 등록 (git에서 뺀 위키를 worktree에서 쓸 때)
+#   wiki-index.sh link <경로> <위키루트>                                # <경로> 아래에서 이 위키와 그 위쪽 위키도 조회하도록 연결 등록 (위키 폴더 바깥 worktree에서 쓸 때)
 #   wiki-index.sh unlink <경로>                                         # 연결 해제
 #   wiki-index.sh links                                                 # 등록된 연결 목록
 set -euo pipefail
@@ -68,13 +69,14 @@ phys_dir() {
 # init 인자 분리: --ignore 값은 IGNORE_MODE, 나머지 위치 인자는 INIT_POS 배열
 parse_init_args() {
   IGNORE_MODE="local"
+  IGNORE_EXPLICIT=0
   INIT_POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --ignore)
         [ $# -ge 2 ] || die "--ignore 값이 필요합니다: local, shared, none 중 하나"
-        IGNORE_MODE="$2"; shift 2 ;;
-      --ignore=*) IGNORE_MODE="${1#--ignore=}"; shift ;;
+        IGNORE_MODE="$2"; IGNORE_EXPLICIT=1; shift 2 ;;
+      --ignore=*) IGNORE_MODE="${1#--ignore=}"; IGNORE_EXPLICIT=1; shift ;;
       --) shift; while [ $# -gt 0 ]; do INIT_POS+=("$1"); shift; done ;;
       -*) die "알 수 없는 옵션: $1" ;;
       *) INIT_POS+=("$1"); shift ;;
@@ -89,8 +91,10 @@ parse_init_args() {
 # 위키 폴더를 git 무시 목록에 추가한다 (git repo 밖이면 건너뜀, 같은 줄이 있으면 다시 넣지 않음)
 #   local  → <repo>/.git/info/exclude : 이 기기에서만 적용, repo 파일은 바뀌지 않음
 #   shared → <repo>/.gitignore        : 팀 전체에 적용, 이 변경은 커밋해야 함
+# 위키 파일이 이미 git에 추적되고 있으면: 옵션을 생략한 경우(explicit=0)는 건너뛰고,
+# 옵션을 직접 준 경우는 추가하되 기존 파일은 계속 추적되고 새 파일만 무시된다고 알린다.
 apply_ignore() {
-  local wiki_root="$1" mode="$2"
+  local wiki_root="$1" mode="$2" explicit="${3:-1}"
   [ "$mode" != none ] || return 0
 
   local top
@@ -104,6 +108,13 @@ apply_ignore() {
   wiki_p="$(phys_dir "$wiki_root")"
   rel="${wiki_p#"$top_p"/}"
   pattern="/$rel/"
+
+  local tracked=0
+  [ -z "$(git -C "$top" ls-files -- "$rel")" ] || tracked=1
+  if [ "$tracked" -eq 1 ] && [ "$explicit" -eq 0 ]; then
+    echo "· 위키가 이미 git에 커밋돼 있어 기본 무시 설정(local)을 건너뜁니다. 그래도 무시하려면 --ignore local을 붙여 다시 실행하세요"
+    return 0
+  fi
 
   if [ "$mode" = "local" ]; then
     file="$(git -C "$top" rev-parse --git-path info/exclude)"
@@ -126,8 +137,8 @@ apply_ignore() {
     echo "  → .gitignore 변경은 커밋해야 팀에 적용됩니다"
   fi
 
-  if [ -n "$(git -C "$top" ls-files -- "$rel")" ]; then
-    echo "⚠ git이 이미 추적 중인 위키 파일이 있어 무시가 적용되지 않습니다. 추적을 끊으려면: git -C \"$top\" rm -r --cached -- \"$rel\"" >&2
+  if [ "$tracked" -eq 1 ]; then
+    echo "⚠ git이 이미 추적 중인 위키 파일은 계속 추적되고, 새로 만드는 위키 파일만 무시됩니다. 기존 파일 추적도 끊으려면: git -C \"$top\" rm -r --cached -- \"$rel\"" >&2
   fi
 }
 
@@ -159,6 +170,20 @@ register_ws_root() {
   touch "$ROOTS_TSV" 2>/dev/null || return 0
   awk -F'\t' -v p="$wiki_root" '$1!=p' "$ROOTS_TSV" > "$ROOTS_TSV.tmp" 2>/dev/null && mv "$ROOTS_TSV.tmp" "$ROOTS_TSV" 2>/dev/null || :
   printf '%s\t%s\t%s\n' "$wiki_root" "$ws_dir" "$ws_name" >> "$ROOTS_TSV" 2>/dev/null || :
+}
+
+# 위키 루트 인자 검사: 빈 값이면 현재 폴더에 위키를 만들지 않도록 중단
+need_wiki_root() {
+  [ -n "${1:-}" ] || die "위키 루트 경로가 비어 있습니다: $2"
+}
+
+# 옛 형식(0.4.x) wiki.tsv 거부: 6칸 이상이거나 첫 칸(슬러그)에 '/'가 없는 줄이 있으면 아무것도 쓰지 않고 중단
+check_tsv_format() {
+  local idx="$1/wiki.tsv"
+  [ -f "$idx" ] || return 0
+  if awk -F'\t' 'NF > 0 && (NF >= 6 || index($1, "/") == 0) { bad = 1; exit } END { exit !bad }' "$idx"; then
+    die "옛 형식(0.4.x)의 위키 색인입니다: $idx — 새 형식(<카테고리>/<문서> 슬러그, 5칸)으로 먼저 이전(마이그레이션)한 뒤 다시 실행하세요"
+  fi
 }
 
 # wiki.tsv (컬럼: 슬러그(<카테고리>/<문서>) \t 갱신시각 \t 제목 \t 요약 \t 태그) → index.md 자동 컴파일
@@ -231,7 +256,17 @@ wiki_key() {
   fi
 }
 
-# 위키 사슬: 기준 경로에서 위로 올라가며 만나는 docs/wiki를 가까운 순으로 모으고, link로 연결한 위키 1개를 뒤에 붙인다
+# <시작>부터 위로 올라가며 만나는 docs/wiki를 호출한 함수의 cands 배열에 붙인다 ($HOME·/에서 멈춤)
+walk_up_wikis() {
+  local cur="$1"
+  while [ "$cur" != "/" ] && [ "$cur" != "$HOME" ]; do
+    [ -d "$cur/docs/wiki" ] && cands+=("$cur/docs/wiki")
+    cur="$(dirname "$cur")"
+  done
+}
+
+# 위키 사슬: 기준 경로에서 위로 올라가며 만나는 docs/wiki를 가까운 순으로 모으고, link로 연결한 위키 1개와
+# 그 위키가 놓인 폴더의 위쪽 docs/wiki들을 뒤에 붙인다
 # 결과는 전역 변수 R_CHAIN(배열, 전역 위키 제외)과 R_GLOBAL에 담는다 (읽기 전용 — 파일을 만들지 않는다)
 resolve_chain() {
   local target="${1:-.}" abs_target
@@ -240,16 +275,12 @@ resolve_chain() {
   R_CHAIN=()
 
   # 들어온 경로 그대로 한 번, 심링크를 푼 실제 경로로 한 번 올라간다 (겹치는 위키는 아래에서 중복 제거)
-  local cands=() cur start abs_phys starts
+  local cands=() start abs_phys starts
   abs_phys="$(cd "$abs_target" 2>/dev/null && pwd -P || printf '%s' "$abs_target")"
   starts=("$abs_target")
   [ "$abs_phys" = "$abs_target" ] || starts+=("$abs_phys")
   for start in "${starts[@]}"; do
-    cur="$start"
-    while [ "$cur" != "/" ] && [ "$cur" != "$HOME" ]; do
-      [ -d "$cur/docs/wiki" ] && cands+=("$cur/docs/wiki")
-      cur="$(dirname "$cur")"
-    done
+    walk_up_wikis "$start"
   done
 
   # 상위 탐색은 $HOME에서 멈추므로, git repo 바로 위가 $HOME이고 거기에 docs/wiki가 있는 경우를 따로 본다
@@ -259,18 +290,25 @@ resolve_chain() {
     cands+=("$HOME/docs/wiki")
   fi
 
-  # link로 등록한 연결 (여러 개가 겹치면 가장 긴 경로 우선)
-  # 예: git에서 뺀 위키가 들어오지 않는 작업용 복사본(git worktree)에서 원래 폴더의 위키를 쓰는 경우
+  # link로 등록한 연결 (여러 개가 겹치면 가장 긴 경로 우선, 칸 수가 2가 아닌 줄은 쓰지 않음)
+  # 예: 위키 폴더 바깥에 만든 작업용 복사본(git worktree)에서 원래 폴더의 위키를 쓰는 경우
+  # 연결된 위키가 놓인 폴더(<폴더>/docs/wiki의 <폴더>)의 위쪽 위키들도 이어서 붙인다
   if [ -f "$LINKS_TSV" ]; then
-    local target_p link_wiki
+    local target_p link_wiki link_owner
     target_p="$(cd "$abs_target" 2>/dev/null && pwd -P || printf '%s' "$abs_target")"
     link_wiki="$(awk -F'\t' -v t="$target_p" '
-      NF >= 2 && (t == $1 || index(t, $1 "/") == 1) {
+      NF == 2 && (t == $1 || index(t, $1 "/") == 1) {
         if (length($1) > best) { best = length($1); w = $2 }
       }
       END { if (w != "") print w }
     ' "$LINKS_TSV")"
-    [ -n "$link_wiki" ] && [ -d "$link_wiki" ] && cands+=("$link_wiki")
+    if [ -n "$link_wiki" ] && [ -d "$link_wiki" ]; then
+      cands+=("$link_wiki")
+      link_owner="$(dirname "$(dirname "$link_wiki")")"
+      if [ "$link_owner" != "/" ] && [ "$link_owner" != "$HOME" ]; then
+        walk_up_wikis "$(dirname "$link_owner")"
+      fi
+    fi
   fi
 
   local keys=() c k seen dup global_key=""
@@ -313,19 +351,21 @@ case "$cmd" in
 
   init)
     parse_init_args "$@"
-    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init <경로> [제목] [--ignore local|shared|none]"
+    { [ "${#INIT_POS[@]}" -ge 1 ] && [ "${#INIT_POS[@]}" -le 2 ]; } || die "사용법: wiki-index.sh init <경로> [제목] [--ignore local|shared|none]"
     base_dir="$(cd "${INIT_POS[0]}" && pwd)"
     wiki_title="${INIT_POS[1]:-$(basename "$base_dir") Wiki}"
     wiki_root="$base_dir/docs/wiki"
     ensure_wiki_root "$wiki_root" "$wiki_title"
     register_ws_root "$wiki_root" "$(basename "$base_dir")"
     echo "✓ 위키 초기화 완료: $wiki_root"
-    apply_ignore "$wiki_root" "$IGNORE_MODE"
+    apply_ignore "$wiki_root" "$IGNORE_MODE" "$IGNORE_EXPLICIT"
     ;;
 
   upsert)
     { [ $# -ge 5 ] && [ $# -le 6 ]; } || { echo "upsert 인자 5~6개 필요: <위키루트> <카테고리/문서> <갱신시각> <제목> <요약> [태그]" >&2; exit 2; }
+    need_wiki_root "$1" upsert
     wiki_root="$(cd "$1" && pwd)"
+    check_tsv_format "$wiki_root"
     slug="$(slugify "$2")"
     slug="${slug%.md}"
     ts="$(one_line "$3")"
@@ -356,7 +396,9 @@ case "$cmd" in
 
   remove)
     { [ $# -ge 2 ] && [ $# -le 3 ]; } || { echo "remove 인자 2~3개 필요: <위키루트> <카테고리/문서> [사유]" >&2; exit 2; }
+    need_wiki_root "$1" remove
     wiki_root="$(cd "$1" && pwd)"
+    check_tsv_format "$wiki_root"
     slug="$(slugify "$2")"
     slug="${slug%.md}"
     reason="${3:-문서 삭제/통합}"
@@ -374,7 +416,9 @@ case "$cmd" in
 
   rebuild)
     [ $# -ge 1 ] || { echo "rebuild 인자 1개 필요: <위키루트>" >&2; exit 2; }
+    need_wiki_root "$1" rebuild
     wiki_root="$(cd "$1" && pwd)"
+    check_tsv_format "$wiki_root"
     rebuild_index "$wiki_root" "${2:-}"
     echo "✓ index.md 재생성 완료: $wiki_root/index.md"
     ;;
@@ -440,8 +484,15 @@ case "$cmd" in
 
   links)
     if [ -s "$LINKS_TSV" ]; then
-      while IFS=$'\t' read -r l_path l_wiki _; do
-        [ -n "$l_path" ] || continue
+      while IFS= read -r l_line; do
+        [ -n "$l_line" ] || continue
+        l_nf="$(printf '%s\n' "$l_line" | awk -F'\t' '{ print NF }')"
+        if [ "$l_nf" -ne 2 ]; then
+          echo "$(printf '%s' "$l_line" | tr '\t' ' ') ⚠ 형식 오류(칸 ${l_nf}개, 2개여야 함) — 사용하지 않음"
+          continue
+        fi
+        l_path="${l_line%%$'\t'*}"
+        l_wiki="${l_line#*$'\t'}"
         mark=""
         [ -d "$l_wiki" ] || mark=" ⚠ 위키 폴더 없음"
         [ -d "$l_path" ] || mark="$mark ⚠ 경로 없음"
@@ -454,6 +505,7 @@ case "$cmd" in
 
   lint)
     [ $# -ge 1 ] || { echo "lint 인자 필요: <위키루트>" >&2; exit 2; }
+    need_wiki_root "$1" lint
     wiki_root="$(cd "$1" && pwd)"
     idx="$wiki_root/wiki.tsv"
     [ -f "$idx" ] || idx=/dev/null
