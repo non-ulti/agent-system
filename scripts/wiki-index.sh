@@ -13,6 +13,9 @@
 #   wiki-index.sh list [기준경로=.]                                       # 현재 위치에서 참조 가능한 모든 계층 위키 목록 출력
 #   wiki-index.sh search <키워드> [기준경로=.]                            # 참조 가능한 위키들의 색인·본문에서 키워드 검색
 #   wiki-index.sh lint <위키루트>                                         # 색인 누락(고아 파일)·파일 실종 점검
+#   wiki-index.sh link <경로> <위키루트> <프로젝트슬러그>                 # <경로> 아래에서 docs/wiki를 못 찾으면 이 위키·프로젝트를 쓰도록 연결 등록
+#   wiki-index.sh unlink <경로>                                           # 연결 해제
+#   wiki-index.sh links                                                   # 등록된 연결 목록
 set -euo pipefail
 
 if [ -z "${AGENT_SYSTEM_HOME:-}" ]; then
@@ -26,6 +29,8 @@ fi
 
 GLOBAL_WIKI_ROOT="$AS_HOME/wiki"
 ROOTS_TSV="$GLOBAL_WIKI_ROOT/roots.tsv"
+# 연결 등록부 (컬럼: 경로 \t 위키루트 \t 프로젝트슬러그, 경로는 실제 경로 pwd -P 기준)
+LINKS_TSV="$GLOBAL_WIKI_ROOT/links.tsv"
 
 one_line() {
   printf '%s' "${1:-}" | tr '\t\r\n' '   ' | sed -E 's/  +/ /g; s/^ //; s/ $//'
@@ -250,11 +255,39 @@ resolve_paths() {
     via_git_parent=1
   fi
 
+  # 그래도 못 찾았으면 link로 등록한 연결을 본다 (여러 개가 겹치면 가장 긴 경로 우선)
+  # 예: 같은 저장소를 다른 폴더에 펼친 작업용 복사본(git worktree)에서 원래 폴더의 위키를 쓰는 경우
+  local via_link=0
+  if [ -z "$R_WS_WIKI" ] && [ -f "$LINKS_TSV" ]; then
+    local target_p link_line
+    target_p="$(cd "$abs_target" 2>/dev/null && pwd -P || printf '%s' "$abs_target")"
+    link_line="$(awk -F'\t' -v t="$target_p" '
+      NF >= 3 && (t == $1 || index(t, $1 "/") == 1) {
+        if (length($1) > best) { best = length($1); line = $0 }
+      }
+      END { if (line != "") print line }
+    ' "$LINKS_TSV")"
+    if [ -n "$link_line" ]; then
+      local l_wiki l_proj
+      l_wiki="$(printf '%s\n' "$link_line" | cut -f2)"
+      l_proj="$(printf '%s\n' "$link_line" | cut -f3)"
+      if [ -d "$l_wiki" ]; then
+        R_WS_WIKI="$l_wiki"
+        R_WS_ROOT="$(dirname "$(dirname "$l_wiki")")"
+        R_PROJECT="$l_proj"
+        via_link=1
+      fi
+    fi
+  fi
+
   # 프로젝트 슬러그 결정:
+  # 0) link로 찾았으면 등록한 프로젝트 슬러그 (위에서 설정)
   # 1) 찾은 위키에 .project 표식이 있으면 단일 프로젝트 위키 → 표식의 슬러그
   # 2) 워크스페이스 위키 하위 폴더에서 실행 → 워크스페이스 바로 아래 1단계 폴더명 (워크스페이스 루트 자체·docs는 common)
   # 3) 위키를 못 찾았으면 git toplevel 이름
-  if [ -n "$R_WS_WIKI" ] && [ -f "$R_WS_WIKI/.project" ]; then
+  if [ "$via_link" -eq 1 ]; then
+    :
+  elif [ -n "$R_WS_WIKI" ] && [ -f "$R_WS_WIKI/.project" ]; then
     R_PROJECT="$(slugify "$(head -n 1 "$R_WS_WIKI/.project")")"
     [ -n "$R_PROJECT" ] || R_PROJECT="$(slugify "$(basename "$R_WS_ROOT")")"
   elif [ "$via_git_parent" -eq 1 ]; then
@@ -423,6 +456,48 @@ case "$cmd" in
       [ -d "$r" ] || { echo "  (위키 폴더 없음)"; continue; }
       grep -rn -i --include="*.md" -e "$kw" -- "$r" 2>/dev/null || echo "  (일치 항목 없음)"
     done
+    ;;
+
+  link)
+    [ $# -eq 3 ] || die "사용법: wiki-index.sh link <경로> <위키루트> <프로젝트슬러그>"
+    [ -d "$1" ] || die "경로가 없습니다: $1"
+    [ -f "$2/wiki.tsv" ] || die "위키 루트가 아닙니다(wiki.tsv 없음): $2 — init-ws 또는 init-project로 먼저 만드세요"
+    link_path="$(phys_dir "$1")"
+    link_wiki="$(phys_dir "$2")"
+    link_proj="$(slugify "$3")"
+    check_slug "스코프" "$link_proj"
+    mkdir -p "$GLOBAL_WIKI_ROOT"
+    touch "$LINKS_TSV"
+    awk -F'\t' -v p="$link_path" '$1 != p' "$LINKS_TSV" > "$LINKS_TSV.tmp" && mv "$LINKS_TSV.tmp" "$LINKS_TSV"
+    printf '%s\t%s\t%s\n' "$link_path" "$link_wiki" "$link_proj" >> "$LINKS_TSV"
+    echo "✓ 연결 등록: $link_path 아래 → $link_wiki (프로젝트: $link_proj)"
+    echo "  (그 경로 위쪽에 docs/wiki가 있으면 그쪽이 먼저 쓰입니다)"
+    ;;
+
+  unlink)
+    [ $# -eq 1 ] || die "사용법: wiki-index.sh unlink <경로>"
+    link_path="$(phys_dir "$1" || :)"
+    [ -n "$link_path" ] || link_path="$1"
+    if [ -f "$LINKS_TSV" ] && awk -F'\t' -v p="$link_path" '$1 == p { f = 1 } END { exit !f }' "$LINKS_TSV"; then
+      awk -F'\t' -v p="$link_path" '$1 != p' "$LINKS_TSV" > "$LINKS_TSV.tmp" && mv "$LINKS_TSV.tmp" "$LINKS_TSV"
+      echo "✓ 연결 해제: $link_path"
+    else
+      echo "· 등록된 연결이 없습니다: $link_path"
+    fi
+    ;;
+
+  links)
+    if [ -s "$LINKS_TSV" ]; then
+      while IFS=$'\t' read -r l_path l_wiki l_proj; do
+        [ -n "$l_path" ] || continue
+        mark=""
+        [ -d "$l_wiki" ] || mark=" ⚠ 위키 폴더 없음"
+        [ -d "$l_path" ] || mark="$mark ⚠ 경로 없음"
+        echo "$l_path → $l_wiki (프로젝트: $l_proj)$mark"
+      done < "$LINKS_TSV"
+    else
+      echo "(등록된 연결 없음)"
+    fi
     ;;
 
   lint)
