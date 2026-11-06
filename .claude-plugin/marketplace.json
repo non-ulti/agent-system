@@ -8,8 +8,8 @@
     {
       "name": "agent-system",
       "source": "./",
-      "version": "0.4.3",
-      "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프(save-context/load-context) + 3계층 LLM Wiki(wiki) + statusLine 커스텀 상태바"
+      "version": "0.5.0",
+      "description": "AI 에이전트 공통 작업 컨벤션 — 세션 핸드오프(save-context/load-context) + 위치 기반 LLM Wiki(wiki) + statusLine 커스텀 상태바"
     }
   ]
 }

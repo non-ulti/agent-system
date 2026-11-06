@@ -1,9 +1,9 @@
 ---
 name: wiki
-description: Use when the user wants to query, record, update, or lint the hierarchical LLM Wiki knowledge base — e.g., asking "위키에서 찾아봐", "위키에 정리해줘", "wiki", "지식베이스", "트러블슈팅 위키에 기록", or when archiving a completed handoff that contains reusable domain/architecture/troubleshooting knowledge. Manages 3-tier knowledge scopes (Project, Workspace Common, Global Common) via index.md and wiki-index.sh.
+description: Use when the user wants to query, record, update, or lint the location-based LLM Wiki knowledge base — e.g., asking "위키에서 찾아봐", "위키에 정리해줘", "wiki", "지식베이스", "트러블슈팅 위키에 기록", or when archiving a completed handoff that contains reusable domain/architecture/troubleshooting knowledge. Each wiki's location is its scope (a repo's docs/wiki, a parent folder's docs/wiki, or the global wiki), with category folders directly inside; managed via index.md and wiki-index.sh.
 ---
 
-# LLM Wiki (계층형 지식베이스 조회 · 편입 · 관리)
+# LLM Wiki (위치 기반 지식베이스 조회 · 편입 · 관리)
 
 코드·아키텍처·도메인 정책·트러블슈팅·외부 연동 스펙처럼 **단일 작업(티켓)이 끝나도 계속 참조해야 하는 장기 지식**을 마크다운 위키로 컴파일하고 조회한다.
 
@@ -19,23 +19,28 @@ description: Use when the user wants to query, record, update, or lint the hiera
 
 ---
 
-## 3계층 위키 스코프 구조
+## 위키 하나 = 적용 범위 하나
 
-위키는 작업 위치에 따라 자동으로 3계층으로 나뉘어 관리된다:
+위키가 놓인 위치가 곧 그 위키의 적용 범위다. 위키 안에는 범위를 나누는 폴더(공통용·프로젝트별)를 두지 않고, 위키 루트 바로 아래가 카테고리 폴더다(`<위키루트>/<카테고리>/<문서>.md`).
 
-1. **프로젝트 위키 (`<WS_WIKI>/<프로젝트>/`)**
-   - 특정 repo/서비스(예: `shop-api`, `admin-web`, `my-blog`)에만 해당하는 아키텍처·API·트러블슈팅.
-2. **워크스페이스 공통 위키 (`<WS_WIKI>/common/`)**
-   - 같은 상위 워크스페이스(예: 회사 폴더 `company/docs/wiki/common/`, 개인 모노레포 `personal/docs/wiki/common/`) 안의 여러 프로젝트가 함께 공유하는 도메인 정책·공통 DB·인프라·인증 구조.
-   - 회사 개별 repo(`company/shop-api` 등) 바깥인 상위 워크스페이스(`company/docs/wiki/`)에 놓이므로 개별 repo의 `git status`를 더럽히지 않으면서 회사 프로젝트 전체가 지식을 공유한다.
-3. **전역 공통 위키 (`~/.agent-system/wiki/common/`)**
-   - 회사·개인 구분 없이 어디서나 재사용하는 범용 기술·클라우드(OCI, Cloudflare, Supabase 등)·언어·개발 환경 지식.
+| 위키 위치 | 적용 범위 | 담는 지식 |
+|---|---|---|
+| `<repo>/docs/wiki/` | 그 repo | 그 repo에서만 쓰는 아키텍처·API·트러블슈팅 |
+| `<상위폴더>/docs/wiki/` | 그 폴더 아래 모든 프로젝트 | 여러 repo가 함께 쓰는 도메인 정책·공통 DB·인프라·인증 구조 |
+| `~/.agent-system/wiki/` | 어디서나 | 범용 기술·클라우드(OCI, Cloudflare, Supabase 등)·언어·개발 환경 지식 |
+
+조회할 때는 현재 위치에서 위로 올라가며 만나는 `docs/wiki`를 가까운 순으로 모두 보고(위키 사슬), 마지막에 전역 위키를 본다. 같은 repo를 다른 폴더에 펼친 worktree에서는 같은 위키가 두 번 잡히지 않도록 가장 가까운 하나만 쓴다.
+
+- **repo 위키를 git에 커밋하면** 그 repo의 worktree(Orca·Claude Code 작업 폴더 등)에서도 그대로 보인다.
+- repo 안에 만든 worktree(예: `<repo>/.claude/worktrees/<이름>`)는 위로 올라가다 원래 repo의 위키를 만나므로 따로 연결할 필요가 없다.
+- 위키 폴더 **바깥**에 만든 worktree·작업 폴더(예: Orca가 다른 위치에 만든 worktree)는 위로 올라가도 위키를 만나지 않는다. 위키는 기본으로 git에서 빠지므로(`init` 기본 = local 무시) 이런 곳에서는 `link`로 연결해야 조회된다. `--ignore none`으로 커밋한 위키는 worktree에 같이 들어와 연결 없이 보이지만, 그 위쪽 상위 폴더 위키는 여전히 바깥에 있다.
+- `link`로 연결하면 연결한 위키뿐 아니라 그 위키가 놓인 폴더의 위쪽 위키들(예: repo 위키를 연결하면 그 repo를 담은 상위 폴더의 위키)도 함께 조회된다.
 
 ---
 
-## 준비 — 스크립트와 현재 위치의 위키 경로 확인
+## 준비 — 스크립트와 현재 위치의 위키 사슬 확인
 
-모든 작업(조회·편입·점검) 전에 먼저 한 번 실행해 현재 위치의 3계층 경로를 확인한다:
+모든 작업(조회·편입·점검) 전에 먼저 한 번 실행해 현재 위치에서 조회되는 위키를 확인한다:
 
 ```bash
 WIKI_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/wiki-index.sh}"
@@ -44,11 +49,10 @@ WIKI_SH="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/wiki-index.sh}"
 "$WIKI_SH" resolve .
 ```
 
-출력되는 4개 값(`GLOBAL_WIKI`, `WS_ROOT`, `WS_WIKI`, `PROJECT`)을 확인한다. `resolve`·`list`·`search`·`lint`는 읽기 전용이라 어떤 파일도 만들지 않는다 — 위키 파일은 `init-ws`·`init-project`·`upsert`·`remove`·`rebuild`에서만 생긴다.
+출력은 `WIKI=<경로>` 줄 0개 이상(가까운 순)과 `GLOBAL_WIKI=<경로>` 한 줄이다. `resolve`·`list`·`search`·`lint`·`links`는 읽기 전용이라 어떤 파일도 만들지 않는다 — 위키 파일은 `init`·`upsert`·`remove`·`rebuild`에서만 생긴다.
 
-- `WS_WIKI`가 `-`이면 현재 위치 위쪽에 `docs/wiki`가 없고, `link`로 연결된 위키도 없는 상태다. 기존 위키에 연결하거나 새로 만드는 절차는 [references/ingest.md](references/ingest.md)의 0단계에 있다.
-- 위쪽에 `docs/wiki`가 없어도 `"$WIKI_SH" link`로 등록된 위치면 연결된 위키와 프로젝트가 나온다(`"$WIKI_SH" links`로 목록 확인).
-- 워크스페이스 루트 자체에서 실행하면 `PROJECT=common`이다.
+- `WIKI=` 줄이 없으면 현재 위치 위쪽에 `docs/wiki`가 없고 `link`로 연결된 위키도 없는 상태다. 기존 위키에 연결하거나 새로 만드는 절차는 [references/ingest.md](references/ingest.md)의 0단계에 있다.
+- `link`로 등록한 연결은 위쪽에서 찾은 위키들 다음에 연결한 위키, 그다음 그 위키 폴더 위쪽의 위키들 순서로 붙는다(`"$WIKI_SH" links`로 목록 확인, 형식이 잘못된 줄은 `형식 오류`로 표시되고 쓰이지 않는다).
 
 ---
 

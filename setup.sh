@@ -12,7 +12,7 @@ if [ -d "$CLAUDE_DIR/agent-system" ] && [ ! -e "$AGENT_SYSTEM_DIR" ]; then
   ln -s "$CLAUDE_DIR/agent-system" "$AGENT_SYSTEM_DIR"
 fi
 
-mkdir -p "$AGENT_SYSTEM_DIR/bin" "$AGENT_SYSTEM_DIR/handoffs" "$AGENT_SYSTEM_DIR/wiki/common"
+mkdir -p "$AGENT_SYSTEM_DIR/bin" "$AGENT_SYSTEM_DIR/handoffs" "$AGENT_SYSTEM_DIR/wiki"
 chmod +x "$SCRIPT_DIR/scripts/handoff-index.sh" "$SCRIPT_DIR/scripts/wiki-index.sh"
 ln -sf "$SCRIPT_DIR/scripts/handoff-index.sh" "$AGENT_SYSTEM_DIR/bin/handoff-index.sh"
 ln -sf "$SCRIPT_DIR/scripts/wiki-index.sh" "$AGENT_SYSTEM_DIR/bin/wiki-index.sh"
