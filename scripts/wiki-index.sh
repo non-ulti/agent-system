@@ -3,10 +3,11 @@
 # 위키 하나 = 적용 범위 하나: <폴더>/docs/wiki는 그 폴더 아래 전체, ~/.agent-system/wiki는 어디서나. 위키 바로 아래는 카테고리 폴더.
 # 사용:
 #   wiki-index.sh resolve [기준경로=.]                                  # 위로 올라가며 만나는 위키(WIKI=, 가까운 순)와 전역 위키(GLOBAL_WIKI=) 출력 (읽기 전용)
-#   wiki-index.sh init <경로> [제목] [--ignore local|shared]            # <경로>/docs/wiki 초기화 및 등록
+#   wiki-index.sh init <경로> [제목] [--ignore local|shared|none]       # <경로>/docs/wiki 초기화 및 등록
 #     --ignore local  : .git/info/exclude에 위키 폴더 추가 (이 기기에서만 무시, repo 파일 변경 없음)
 #     --ignore shared : repo 루트 .gitignore에 위키 폴더 추가 (팀 전체 무시, 커밋 필요)
-#     생략            : 무시 설정 안 함 (위키를 repo에 커밋하는 경우). 이미 만든 위키에 다시 실행하면 무시 설정만 추가된다
+#     none            : 무시 설정 안 함 (위키를 repo에 커밋하는 경우)
+#     생략            : local과 같음 (기본). 이미 만든 위키에 다시 실행하면 무시 설정만 추가된다
 #   wiki-index.sh upsert <위키루트> <카테고리/문서> <시각> <제목> <요약> [태그]  # 색인 갱신 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh remove <위키루트> <카테고리/문서> [사유]               # 색인에서 제거 + index.md 재빌드 + log.md 기록
 #   wiki-index.sh rebuild <위키루트> [제목]                              # wiki.tsv 기준으로 index.md 재생성
@@ -66,12 +67,12 @@ phys_dir() {
 
 # init 인자 분리: --ignore 값은 IGNORE_MODE, 나머지 위치 인자는 INIT_POS 배열
 parse_init_args() {
-  IGNORE_MODE=""
+  IGNORE_MODE="local"
   INIT_POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --ignore)
-        [ $# -ge 2 ] || die "--ignore 값이 필요합니다: local 또는 shared"
+        [ $# -ge 2 ] || die "--ignore 값이 필요합니다: local, shared, none 중 하나"
         IGNORE_MODE="$2"; shift 2 ;;
       --ignore=*) IGNORE_MODE="${1#--ignore=}"; shift ;;
       --) shift; while [ $# -gt 0 ]; do INIT_POS+=("$1"); shift; done ;;
@@ -80,8 +81,8 @@ parse_init_args() {
     esac
   done
   case "$IGNORE_MODE" in
-    ""|local|shared) ;;
-    *) die "--ignore 값은 local 또는 shared만 쓸 수 있습니다: $IGNORE_MODE" ;;
+    local|shared|none) ;;
+    *) die "--ignore 값은 local, shared, none 중 하나여야 합니다: $IGNORE_MODE" ;;
   esac
 }
 
@@ -90,7 +91,7 @@ parse_init_args() {
 #   shared → <repo>/.gitignore        : 팀 전체에 적용, 이 변경은 커밋해야 함
 apply_ignore() {
   local wiki_root="$1" mode="$2"
-  [ -n "$mode" ] || return 0
+  [ "$mode" != none ] || return 0
 
   local top
   if ! top="$(git -C "$wiki_root" rev-parse --show-toplevel 2>/dev/null)"; then
@@ -312,7 +313,7 @@ case "$cmd" in
 
   init)
     parse_init_args "$@"
-    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init <경로> [제목] [--ignore local|shared]"
+    [ "${#INIT_POS[@]}" -ge 1 ] || die "사용법: wiki-index.sh init <경로> [제목] [--ignore local|shared|none]"
     base_dir="$(cd "${INIT_POS[0]}" && pwd)"
     wiki_title="${INIT_POS[1]:-$(basename "$base_dir") Wiki}"
     wiki_root="$base_dir/docs/wiki"

@@ -32,7 +32,7 @@ description: Use when the user wants to query, record, update, or lint the locat
 조회할 때는 현재 위치에서 위로 올라가며 만나는 `docs/wiki`를 가까운 순으로 모두 보고(위키 사슬), 마지막에 전역 위키를 본다. 같은 repo를 다른 폴더에 펼친 worktree에서는 같은 위키가 두 번 잡히지 않도록 가장 가까운 하나만 쓴다.
 
 - **repo 위키를 git에 커밋하면** 그 repo의 worktree(Orca·Claude Code 작업 폴더 등)에서도 그대로 보인다.
-- **git에서 뺀 위키**(`--ignore local|shared`, 또는 repo 안에 있지만 무시되는 상위 폴더 위키)는 worktree에 들어오지 않으므로, worktree 경로를 `link`로 연결해야 조회된다.
+- 위키는 기본으로 git에서 빠지므로(`init` 기본 = local 무시) Orca·git worktree에서는 `link`로 연결해야 조회된다. `--ignore none`으로 커밋한 위키만 worktree에 같이 들어온다. repo 안에 있지만 무시되는 상위 폴더 위키도 마찬가지다.
 
 ---
 

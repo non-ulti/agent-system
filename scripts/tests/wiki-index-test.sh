@@ -66,7 +66,12 @@ ok "T-old init-ws는 없는 명령" '! "$W" init-ws "$S/ni" >/dev/null 2>&1'
 ok "T-old2 init-project는 없는 명령" '! "$W" init-project "$S/ni" >/dev/null 2>&1'
 
 # --ignore
-ok "T18 옵션 생략 시 무시 설정 안 함" '"$W" init "$S/ws" >/dev/null && ! grep -q docs/wiki "$S/ws/.git/info/exclude" 2>/dev/null && [ ! -f "$S/ws/.gitignore" ]'
+mkdir -p "$S/dflt"; git -C "$S/dflt" init -q
+ok "T18 옵션 생략 시 local 무시" '"$W" init "$S/dflt" >/dev/null && grep -qxF "/docs/wiki/" "$S/dflt/.git/info/exclude" && [ ! -f "$S/dflt/.gitignore" ] && [ -z "$(git -C "$S/dflt" status --porcelain -- docs)" ]'
+mkdir -p "$S/nn"; git -C "$S/nn" init -q
+ok "T-none --ignore none은 무시 설정 안 함(추적 대상)" '"$W" init "$S/nn" --ignore none >/dev/null && ! grep -q "docs/wiki" "$S/nn/.git/info/exclude" && [ ! -f "$S/nn/.gitignore" ] && git -C "$S/nn" status --porcelain -- docs | grep -q "docs"'
+mkdir -p "$S/bd"; git -C "$S/bd" init -q
+ok "T-bad --ignore foo는 실패하고 무시 설정을 쓰지 않음" '! "$W" init "$S/bd" --ignore foo >/dev/null 2>&1 && ! grep -q "docs/wiki" "$S/bd/.git/info/exclude" && [ ! -f "$S/bd/.gitignore" ]'
 "$W" init "$S/ws" --ignore local >/dev/null
 ok "T19 --ignore local: exclude에 추가, repo 파일 변경 없음, git status 깨끗" 'grep -qxF "/docs/wiki/" "$S/ws/.git/info/exclude" && [ ! -f "$S/ws/.gitignore" ] && [ -z "$(git -C "$S/ws" status --porcelain -- docs)" ]'
 "$W" init "$S/ws" --ignore=local >/dev/null
