@@ -90,11 +90,31 @@ class TestStatusline(unittest.TestCase):
 
     def test_render_full(self):
         lines = strip(sl.render(self.FULL)).split("\n")
-        self.assertEqual(lines[0], "feature-x · Opus 4.8 · high · $0.012")
+        self.assertEqual(
+            lines[0], "feature-x · Opus 4.8 · high · $0.012 · ↑15.5k ↓1.2k")
         self.assertEqual(
             lines[1],
-            "██░░░░░░░░░░░░░░░░░░ 8% · ↑15.5k ↓1.2k · 5h 24%",
+            "ctx ██░░░░░░░░░░░░░░░░░░ 8% · usage(24%)",
         )
+
+    def test_format_reset_days(self):
+        now = int(sl.time.time())
+        self.assertEqual(sl.format_reset(now + 3 * 86400 + 4 * 3600 + 120), "3d4h")
+        self.assertEqual(sl.format_reset(now + 2 * 3600 + 610), "2h10m")
+
+    def test_render_seven_day(self):
+        now = int(sl.time.time())
+        data = {"rate_limits": {
+            "five_hour": {"used_percentage": 23.5},
+            "seven_day": {"used_percentage": 41.2,
+                          "resets_at": now + 3 * 86400 + 4 * 3600 + 120},
+        }}
+        self.assertEqual(strip(sl.render(data)),
+                         "usage(24%) · week ████░░░░░░ 41% (3d4h left)")
+
+    def test_render_seven_day_only(self):
+        data = {"rate_limits": {"seven_day": {"used_percentage": 10}}}
+        self.assertEqual(strip(sl.render(data)), "week █░░░░░░░░░ 10%")
 
     def test_render_omits_missing_effort_and_cost(self):
         data = {"model": {"display_name": "Opus"}, "workspace": {"git_worktree": "b"}}
@@ -113,7 +133,9 @@ class TestStatusline(unittest.TestCase):
         data = {"context_window": {"used_percentage": 8,
                                    "total_input_tokens": 100,
                                    "total_output_tokens": 50}}
-        self.assertNotIn("5h", strip(sl.render(data)))
+        out = strip(sl.render(data))
+        self.assertNotIn("usage(", out)
+        self.assertNotIn("week", out)
 
     def test_render_empty_data(self):
         self.assertEqual(sl.render({}), "")

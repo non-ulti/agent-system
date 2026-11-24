@@ -11,6 +11,7 @@ BAR_WIDTH = 20
 ORANGE_THRESHOLD = 50  # 이 % 이상이면 주황
 RED_THRESHOLD = 80     # 이 % 이상이면 빨강
 GIT_TIMEOUT_SECS = 2   # branch_from_git 의 git 호출 타임아웃
+WEEK_BAR_WIDTH = 10    # 주간 한도 막대 칸 수 (둘째 줄 길이 때문에 ctx 막대보다 짧게)
 
 # 256-color ANSI (주황은 16색에 없어 256색 사용)
 GREEN = "\033[38;5;40m"
@@ -26,6 +27,10 @@ EFFORT_COLOR = "\033[38;5;245m"  # effort: grey
 COST_COLOR = DIM               # 비용: dim
 
 SEP = f"{DIM} · {RESET}"
+
+# rate_limits 창 키 -> (표시 이름, 막대 칸 수). 5시간 창과 7일(주간) 창.
+# 막대 칸 수 0 이면 막대 없이 `이름(N% · 남은시간 left)` 텍스트로 표시한다.
+RATE_LIMIT_WINDOWS = (("five_hour", "usage", 0), ("seven_day", "week", WEEK_BAR_WIDTH))
 
 
 def format_tokens(n):
@@ -53,6 +58,9 @@ def format_reset(resets_at):
     if remaining <= 0:
         return "now"
     h, m = divmod(remaining // 60, 60)
+    d, h = divmod(h, 24)
+    if d:
+        return f"{d}d{h}h"
     if h:
         return f"{h}h{m:02d}m"
     if m:
@@ -151,11 +159,21 @@ def render(data):
             f"{_c(DIM, 'ctx')} {make_bar(pct)} "
             f"{_c(pick_color(pct), str(round(pct)) + '%')}{size_str}"
         )
-    five_hour = (data.get("rate_limits") or {}).get("five_hour") or {}
-    rl = five_hour.get("used_percentage")
-    if rl is not None:
-        reset = format_reset(five_hour.get("resets_at"))
-        label = f"usage({round(rl)}% · {reset} left)" if reset else f"usage({round(rl)}%)"
+    rate_limits = data.get("rate_limits") or {}
+    for key, name, width in RATE_LIMIT_WINDOWS:
+        window = rate_limits.get(key) or {}
+        rl = window.get("used_percentage")
+        if rl is None:
+            continue
+        reset = format_reset(window.get("resets_at"))
+        if width:
+            reset_str = f" {_c(DIM, '(' + reset + ' left)')}" if reset else ""
+            seg2.append(
+                f"{_c(DIM, name)} {make_bar(rl, width)} "
+                f"{_c(pick_color(rl), str(round(rl)) + '%')}{reset_str}"
+            )
+            continue
+        label = f"{name}({round(rl)}% · {reset} left)" if reset else f"{name}({round(rl)}%)"
         seg2.append(_c(DIM, label))
 
     lines = []

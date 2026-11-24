@@ -12,6 +12,11 @@ mkdir -p "$CLAUDE_DIR" "$BACKUP_DIR"
 chmod +x "$SRC"
 ln -sf "$SRC" "$DEST"
 
+# 공통 agent-system 환경 초기화 실행
+if [ -f "$SCRIPT_DIR/setup.sh" ]; then
+  bash "$SCRIPT_DIR/setup.sh" --from-statusline
+fi
+
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$BACKUP_DIR/settings.json.bak.$(date +%Y%m%d%H%M%S)"
 fi
