@@ -7,6 +7,7 @@ NonUlti 개인 공통 Claude Code 플러그인. 여러 프로젝트·머신에�
 
 - **save-context** — 현재 세션 작업 상태를 `.claude/HANDOFF.md`로 저장 (세션 핸드오프)
 - **load-context** — `.claude/HANDOFF.md`를 읽고 현재 상태와 대조해 복원 브리핑
+- **sync-ai** — 공통 마스터(`~/.agents/mcp.json`, `~/.agents/skills/`)와 Claude 플러그인 스킬을 Antigravity(Gemini) · Claude · Codex(GPT) 3개 플랫폼에 동기화
 
 두 스킬은 슬래시(`/agent-system:save-context` — `agent-system`이 플러그인 이름 접두사)로도, 자연어("컨텍스트 저장해줘")로도 호출된다.
 
@@ -60,3 +61,17 @@ Claude CLI 입력창 아래에 브랜치 · 모델 · effort · 비용 / 컨텍�
   `~/.claude/settings.json`에 `statusLine` 키만 머지한다(기존 설정은 `~/.claude/backups/`에 백업).
 - 시스템 `python3`만 사용(외부 의존성 없음). 새 세션/재시작에서 반영된다.
 - 설계: `docs/specs/2026-06-13-statusline-design.md`
+
+## sync-ai (멀티 AI 설정 동기화)
+
+공통 마스터(`~/.agents/mcp.json`, `~/.agents/skills/`)와 Claude 플러그인 스킬을 **Antigravity(Gemini) · Claude Code · Codex(GPT)** 3개 플랫폼에 한 번에 동기화한다.
+
+설치 (머신당 1회):
+```bash
+./setup-sync-ai.sh
+```
+
+사용:
+- 터미널: `sync-ai` (또는 `sync-ai --workspace ~/my-workspace`)
+- 채팅창: `/sync-ai` (또는 `/agent-system:sync-ai`)
+- 머신별 워크스페이스 목록은 `~/.agents/sync-ai.json`에 `{"workspaces": ["~/path/to/workspace"]}` 형태로 저장한다.
