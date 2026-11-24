@@ -9,6 +9,7 @@
 - **save-context** — 현재 세션을 `~/.agent-system/handoffs/<슬러그>.md`로 저장. 자동 압축과 달리 다음 세션이 다시 알아낼 수 없는 것(사용자 지시, 해봤는데 안 된 방법, 조사로 확인한 사실)을 `놓치면 안 되는 것`으로 골라 그대로 남기고, repo 상태는 `handoff-index.sh baseline` 기준값으로 기록. 완료(`--done`) 시 장기 보존할 지식은 `wiki` 편입을 제안
 - **load-context** — 저장된 핸드오프를 현재 repo 상태와 대조해 브리핑. `놓치면 안 되는 것`은 요약 없이 그대로 전하고, 작업 중 압축되면 핸드오프를 다시 읽는다
 - **wiki** — 위치 기반 LLM Wiki 지식베이스. 위키 하나가 적용 범위 하나다: repo 전용은 `<repo>/docs/wiki`, 여러 repo 공통은 상위 폴더의 `docs/wiki`, 어디서나 쓰는 지식은 `~/.agent-system/wiki`이고, 위키 바로 아래가 카테고리 폴더다. 조회할 때는 현재 위치에서 위로 올라가며 만나는 위키를 가까운 순으로 모두 보고 전역 위키를 본다. `wiki-index.sh`를 통해 `wiki.tsv` 색인·`index.md` 목차·`log.md` 변경 이력을 일관되게 유지하며 아키텍처·도메인·트러블슈팅 지식을 누적·조회·점검(lint)한다. 위키는 `init`으로 만들고, git에서 뺀 위키가 들어오지 않는 작업 폴더(예: git worktree)는 `link`로 연결한다(위키는 기본으로 이 기기에서만 git 무시(local)되고, `--ignore shared`로 팀 전체 무시, `--ignore none`으로 커밋할 수 있다)
+- **sync-ai** — 공통 마스터(`~/.agents/mcp.json`, `~/.agents/skills/`)와 Claude 플러그인 스킬을 Antigravity(Gemini) · Claude Code · Codex(GPT) 3개 플랫폼에 동기화
 - **/agent-system:setup-statusline** (커맨드) — Claude CLI 입력창 아래에 브랜치·토큰·비용을 표시하는 커스텀 상태바. Claude Code 전용이라 스킬이 아닌 `commands/`에 두며, Codex·Antigravity에서는 로드되지 않는다
 
 스킬은 슬래시 커맨드(`/agent-system:save-context` 등) 또는 자연어("컨텍스트 저장해줘", "이어서 하자")로 자유롭게 호출됩니다.
@@ -89,3 +90,17 @@ Claude CLI 입력창 아래에 브랜치 · 모델 · effort · 비용 / 컨텍�
 - `statusline/statusline.py`를 `~/.claude/statusline.py`로 심링크하고,
   `~/.claude/settings.json`에 `statusLine` 키만 머지한다(기존 설정은 `~/.claude/backups/`에 백업).
 - 시스템 `python3`만 사용(외부 의존성 없음). 새 세션/재시작에서 반영된다.
+
+## sync-ai (멀티 AI 설정 동기화)
+
+공통 마스터(`~/.agents/mcp.json`, `~/.agents/skills/`)와 Claude 플러그인 스킬을 **Antigravity(Gemini) · Claude Code · Codex(GPT)** 3개 플랫폼에 한 번에 동기화한다.
+
+설치 (머신당 1회):
+```bash
+./setup-sync-ai.sh
+```
+
+사용:
+- 터미널: `sync-ai` (또는 `sync-ai --workspace ~/my-workspace`)
+- 채팅창: `/sync-ai` (또는 `/agent-system:sync-ai`)
+- 머신별 워크스페이스 목록은 `~/.agents/sync-ai.json`에 `{"workspaces": ["~/path/to/workspace"]}` 형태로 저장한다.
