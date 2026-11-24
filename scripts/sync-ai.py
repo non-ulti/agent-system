@@ -270,9 +270,9 @@ def sync_skills(workspaces: list[Path]):
             sdir = skill_md.parent
             if sdir.name in ("computer-use",):
                 continue
-            dst = CLAUDE_SKILLS_DIR / sdir.name
-            if not dst.exists() and not dst.is_symlink():
-                claude_extra[sdir.name] = sdir.resolve()
+            # 이미 링크가 있는 스킬도 넣는다. 빼면 sync_skill_symlinks 가 지난 관리 목록에만 있는
+            # 스킬로 보고 링크를 지워서, 실행할 때마다 기존 링크가 지워졌다 생겼다 한다.
+            claude_extra[sdir.name] = sdir.resolve()
         if claude_extra:
             c_count = sync_skill_symlinks(CLAUDE_SKILLS_DIR, claude_extra)
             print(f"[Claude]      공용 스킬 심볼릭 링크 {c_count}개 동기화 -> {CLAUDE_SKILLS_DIR}")
